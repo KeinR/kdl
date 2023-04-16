@@ -4,6 +4,7 @@
 #include <vector>
 #include <unicode/unistr.h>
 #include <unicode/schriter.h>
+#include <cassert>
 
 namespace icu = icu_72;
 
@@ -172,25 +173,23 @@ bool tokenizeString(const icu::UnicodeString &input, std::vector &output, std::s
             iter.next();
             // Do not slurp if we have 中, since it will always be on its own;
             // it is never a verb (probably).
-            if (c != U'中') {
-                UChar32 l = c;
-                while (iter.hasNext()) {
-                    UChar32 f = iter.current32();
-                    uChar32 s = U'\0';
-                    iter.next();
-                    if (iter.hasNext()) {
-                        s = iter.current32();
-                    }
-                    // Slurp hiragana after kanji.
-                    // Supposed Particles will only stop the slurp if the previous
-                    // character was not hiragana.
-                    if ((isParticle(f, s) != 0 && !isHiragana(l)) || (!isKanji(f) && !isHiragana(f))) {
-                        iter.previous();
-                        break;
-                    }
-                    l = f;
-                    out += f;
+            UChar32 l = c;
+            while (iter.hasNext()) {
+                UChar32 f = iter.current32();
+                uChar32 s = U'\0';
+                iter.next();
+                if (iter.hasNext()) {
+                    s = iter.current32();
                 }
+                // Slurp hiragana after kanji.
+                // Supposed Particles will only stop the slurp if the previous
+                // character was not hiragana.
+                if ((isParticle(f, s) != 0 && !isHiragana(l)) || (!isKanji(f) && !isHiragana(f))) {
+                    iter.previous();
+                    break;
+                }
+                l = f;
+                out += f;
             }
         } else if (isLinefeed(c, n)) {
             lineNumber++;
@@ -216,21 +215,22 @@ typedef std::vector<std::vector<token>> codeStack_t;
 
 enum type {
     NUMBER,
-    STRING,
-    NULL
-}
+    STRING
+};
 
 struct variable {
     double number;
     icu::UnicodeString string;
     type t;
-}
+};
 
 struct parameters {
     variable ni;
     variable de;
     variable wo;
-}
+    variable e;
+    variable wa;
+};
 
 struct state;
 
@@ -239,37 +239,46 @@ struct function {
     type ni,
     type de,
     type wo,
-    std::function<void(state&, const parameters&)>
-}
+    type e;
+    std::function<void(state&, const parameters&)> action;
+};
+
+struct adjective {
+    std::function<bool(state&, const variable&)> action;
+};
 
 struct state {
     stack_t stack;
     codeStack_t codeStack;
     std::map<icu::UnicodeString, function> functions;
+    std::map<icu::UnicodeString, adjetive> adjective;
     icu::UnicodeString exitStatusMessage;
     bool terminate;
-}
-
-/*
-struct pair {
-    tokenData token;
-    tokenData particle;
-}
-*/
+};
 
 struct statementData {
-    std::vector<icu::UnicodeString> data;
     std::vector<tokenData> tokens;
-}
+};
 
 struct statement {
     statementData ni;
     statementData tara;
     statementData de;
     statementData wo;
-    statementData ha;
+    statementData wa;
+    statementData e;
     statementData verb;
-}
+};
+
+struct procStatement {
+    std::vector<variable> ni;
+    std::vector<variable> tara;
+    std::vector<variable> de;
+    std::vector<variable> wo;
+    std::vector<variable> wa;
+    std::vector<variable> e;
+    std::vector<variable> verb;
+};
 
 int periodIndex(std::vector<tokenData> &tokens, int begin) {
     for (int i = begin; i < tokens.size(); i++) {
@@ -280,27 +289,32 @@ int periodIndex(std::vector<tokenData> &tokens, int begin) {
     return tokens.size();
 }
 
-bool makeStatement(const state &s, const std::vector<tokenData> &tokens, int start, int end, statement &output) {
+bool trySetAttribute(statementData &output, const statementData &value) {
+    if (output.tokens.size() == 0) {
+        output = value;
+        return true;
+    }
+    return false;
+}
+
+bool makeStatement(const std::vector<tokenData> &tokens, const int start, const int end, statement &output) {
     statement out;
-    bool ni = false;
-    bool tara = false;
-    bool de = false;
-    bool wo = false;
-    bool ha = false;
-    bool verb = false;
 
     variable val;
     for (int i = start; i < end; i++) {
         if (i + 1 < end) {
-            std::vector<icu::UnicodeString> data;
-            std::vector<icu::UnicodeString> data;
-            for (; tokens[i + 1] == 'の'; i++) {
-                if (i + 1 >= end) {
-                    // Error: reached end of statement while reading variable
-                    return false;
-                }
-
+            statementData data;
+            std::vector<tokenData> data;
+            for (; i + 1 < end && tokens[i + 1].value == 'の'; i++) {
+                data.tokens.push_back(tokens[i]);
             }
+            if (i + 1 >= end) {
+                // Error: reached end of statement while reading variable.
+                // This happened while reading the varialbe with the の
+                // A statement must be terminated by a verb.
+                return false;
+            }
+            data.tokens.push_back(tokens[i]);
 
             if (tokens[i + 1].t != token::PARTICLE) {
                 // Each thing must be suceeded by a particle. Otherwise, Very
@@ -309,11 +323,39 @@ bool makeStatement(const state &s, const std::vector<tokenData> &tokens, int sta
                 return false;
             }
 
-            if (tokens[i + 1].value == U'の') {
-                
-            } else if (tokens[i + 1].value == U'は') {
-
+            if (tokens[i + 1].value == U'は') {
+                if (!trySetAttribute(out.wa, data)) {
+                    // Error: redefinition of は
+                    return false;
+                }
+            } else if (tokens[i + 1].value == U'で') {
+                if (!trySetAttribute(out.de, data)) {
+                    // Error: redefinition of で
+                    return false;
+                }
+            } else if (tokens[i + 1].value == U'に') {
+                if (!trySetAttribute(out.ni, data)) {
+                    // Error: redefinition of に
+                    return false;
+                }
+            } else if (tokens[i + 1].value == U'へ') {
+                if (!trySetAttribute(out.e, data)) {
+                    // Error: redefinition of へ
+                    return false;
+                }
+            } else if (tokens[i + 1].value == U'を') {
+                if (!trySetAttribute(out.wo, data)) {
+                    // Error: redefinition of を
+                    return false;
+                }
+            } else if (tokens[i + 1].value == U'た' && i + 2 < end && tokens[i + 2] == U'ら') {
+                if (!trySetAttribute(out.tara, data)) {
+                    // Error: redefinition of は
+                    return false;
+                }
+                i++;
             }
+            i++;
 
         } else {
             // Expect that this is a verb or です.
@@ -322,9 +364,10 @@ bool makeStatement(const state &s, const std::vector<tokenData> &tokens, int sta
                 return false;
             }
             if (verb) {
-                // Error: veb redefinition?
+                // Error: verb redefinition?
                 // How is this possible?
                 // This can't happen!
+                // We're at the end!?!?
                 assert(false);
                 return false;
             }
@@ -337,7 +380,27 @@ bool makeStatement(const state &s, const std::vector<tokenData> &tokens, int sta
     return true;
 }
 
-// statement makeStatement(std::vector<pair> &tokens, )
+bool unrollParameterSingle(state &s const statementData &d, icu::UnicodeString &v) {
+    icu::UnicodeString name = d.tokens[0].value;
+    for (int i = 1; i < d.tokens.size(); i++) {
+        icu::UnicodeString val = d.tokens[i].value;
+        if (val == U"中") {
+            if (state.symbolTable.count(val) == 0) {
+                // Error: variable does not exist.
+                return false;
+            }
+            name = state.symbolTable[]
+        } else {
+            // User is not allowed to use $
+            name = name + "$" + val;
+        }
+    }
+    v 
+}
+
+bool unrollParameters(, parameters &p) {
+    unrollParameterSingle(, p.e)
+}
 
 bool interpretTokens(const std::vector<tokenData> &tokens, std::string &error) {
     state s;
@@ -351,16 +414,72 @@ bool interpretTokens(const std::vector<tokenData> &tokens, std::string &error) {
             s.codeStack.push_back(tokens);
         } else {
             std::cout << error << std::endl;
-            std::cout << "Refusing to call function.\n";
+            std::cout << "Refusing to call function." << std::endl;
             s.terminate = true;
         }
-    }}
+    }};
 
-    for (int i = 0; i < tokens.size(); i++) {
+    s.adjectives["ぜろ"] = {[](state &s, const variable &p) -> bool {
+        return p.type == type::NUMBER && p.number == 0;
+    }};
+
+    for (int i = 0; i < tokens.size();) {
         const int start = i;
         const int end = periodIndex(tokens, i);
-        // std::vector<pair> pairs = makeParticlePairs(tokens, start, end);
-        std::vector<
+        statement st;
+        bool succeed = makeStatement(tokens, start, end, st);
+        if (statement.verb.tokens.size() == 0) {
+            // Error: statement requires verb.
+            return false;
+        }
+        if (statement.verb.tokens.size() != 1) {
+            // Error: too many verbs given.
+            // This should be impossible.
+            assert(false);
+            return false;
+        }
+        icu::UnicodeString verbName = st.verb.tokens[0].value;
+        if (st.functions.count(verbName) == 0) {
+            // Error: Unknown verb
+            return false;
+        }
+        if (verbName == U"です" &&
+                st.e.size() != 0    ||
+                st.wa.size() != 0   ||
+                st.wo.size() != 0   ||
+                st.de.size() != 0   ||
+                st.tara.size() != 0 ||
+                st.ni.size() != 0   ||
+           ) {
+            // Error: です, being a literal assignment, expects zero particlest.
+            return false;
+        }
+        if (st.tara.tokens.size() != 0 && s.wa.tokens.size() == 0) {
+            // Error: たら expects は, since it is the conditional, and は
+            // specifies the comparison.
+            return false;
+        }
+        function f = functions[verbName];
+        if (f.e == type::NULL && st.e.tokens.size() != 0) {
+            // Error: function does not take へ parameters
+            return false;
+        }
+        if (f.wo == type::NULL && st.wo.tokens.size() != 0) {
+            // Error: function does not take を parameters
+            return false;
+        }
+        if (f.de == type::NULL && st.de.tokens.size() != 0) {
+            // Error: function does not take で parameters
+            return false;
+        }
+        if (f.ni == type::NULL && st.ni.tokens.size() != 0) {
+            // Error: function does not take に parameters
+            return false;
+        }
+        // Unroll parameters
+        parameters p;
+        bool unrollSuccess = unrollParameters(st, p);
+
     }
 }
 
