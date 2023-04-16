@@ -1,0 +1,2 @@
+Too lazy to make a makefile so here you go
+g++ -o main main.cpp `pkg-config --libs --cflags icu-uc icu-io`
