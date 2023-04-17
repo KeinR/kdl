@@ -66,7 +66,11 @@ int findIndex(psd_hashmap *m, const char *key, size_t *bucket, size_t *data) {
 
 // --- Access & modification ---
 
-int psd_hashmap_insert(psd_hashmap *m, const char *key, const char *value, size_t valueLen) {
+size_t psd_hashmap_size(const psd_hashmap *m) {
+    return m->nElements;
+}
+
+int psd_hashmap_insert(psd_hashmap *m, const char *key, const void *value, size_t valueLen) {
     const int iKey = getIndex(m, key);
     psd_hashmap_bucket *b = m->buckets + iKey;
     const int newLength = b->length + 1;
@@ -81,15 +85,18 @@ int psd_hashmap_insert(psd_hashmap *m, const char *key, const char *value, size_
     psd_hashmap_data e;
 
     e.keyLen = stringLength(key);
-    e.key = malloc(sizeof(char) * e.keyLen);
+    e.key = (void *) malloc(sizeof(char) * e.keyLen);
     memcpy(e.key, key, e.keyLen);
 
     e.valueLen = stringLength(value);
-    e.value = malloc(sizeof(char) * e.valueLen);
+    e.value = (void *) malloc(sizeof(uint8_t) * e.valueLen);
     memcpy(e.value, value, e.valueLen);
 
     b->data[b->length] = e;
     b->length++;
+
+    m->nElements++;
+
     return PSD_HASHMAP_EOK;
 }
 
@@ -109,7 +116,7 @@ psd_hashmap_searchResult psd_hashmap_search(psd_hashmap *m, const char *key) {
     return result;
 }
 
-size_t psd_hashmap_get(const psd_hashmap *m, psd_hashmap_searchResult search, char *data, size_t count) {
+size_t psd_hashmap_get(const psd_hashmap *m, psd_hashmap_searchResult search, void *data, size_t count) {
     psd_hashmap_data d = m->buckets[search.bucket].data[search.data].value;
     size_t writeLen = stmin(count, d.valueLen);
     memcpy(data, d.value, writeLen);
@@ -120,6 +127,63 @@ void psd_hashmap_remove(psd_hashmap *m, psd_hashmap_searchResult search) {
     psd_hashmap_bucket *b = m->buckets + search.bucket;
     b->data[search.data] = b->data[b->length - 1];
     b->length--;
+    m->elements--;
+}
+
+// --- Iteration ---
+
+void psd_hashmap_iterator_init(psd_hashmap *m, psd_hashmap_iterator *i) {
+    i->m = m;
+    i->bucket = 0;
+    i->data = 0;
+    psd_hashmap_iterator_start(i);
+}
+
+void psd_hashmap_iterator_start(psd_hashmap_iterator *i) {
+    i->start = 0;
+    i->data = 0;
+    psd_hashmap_iterator_next(i);
+}
+
+int psd_hashmap_iterator_next(psd_hashmap_iterator *i) {
+    psd_hashmap_iterator it = *i;
+    it.data++;
+    if (it.data > it.m[it.bucket].length) {
+        it.data = 0;
+        do {
+            it.bucket++;
+            if (it.bucket >= it.m.nBuckets) {
+                return PSD_HASHMAP_EEND;
+            }
+        } while (i.m[i.bucket].length == 0);
+    }
+    *i = it;
+    return PSD_HASHMAP_EOK;
+}
+
+int psd_hashmap_iterator_prev(psd_hashmap_iterator *i) {
+    psd_hashmap_iterator it = *i;
+    if (it.data == 0) {
+        do {
+            if (i.bucket == 0) {
+                return PSD_HASHMAP_EEND;
+            }
+        } while (i.m[i.bucket].length == 0);
+        it.data = i.m[i.bucket].length - 1;
+    } else {
+        it.data--;
+    }
+    *i = it;
+    return PSD_HASHMAP_EOK;
+}
+
+psd_hashmap_searchResult psd_hashmap_iterator_get(psd_hashmap_iterator i) {
+    psd_hashmap_searchResult result;
+    result.bucket = i.bucket;
+    result.data = i.data;
+    result.length = i.m->buckets[i.bucket].data[i.data].valueLen;
+    result.code = PSD_HASHMAP_EOK;
+    return result;
 }
 
 // --- Memory and initailization ---
@@ -154,6 +218,7 @@ void psd_hashmap_free(psd_hashmap *m) {
 int psd_hashmap_init(psd_hashmap *m, uint8_t precision) {
     m->precision = precision;
     m->error = "";
+    m->nElements = 0;
     m->nBuckets = 1 << m->precision;
     m->mask = m->nBuckets - 1; // Know your bitmath
     m->buckets = (psd_hashmap_bucket *) malloc(sizeof(psd_hashmap_bucket) * m->nBuckets);
