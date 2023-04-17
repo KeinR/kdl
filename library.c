@@ -218,7 +218,7 @@ bool psd_init() {
     curl_global_init(CURL_GLOBAL_ALL);
 }
 
-void psd_uninit() {
+void psd_cleanup() {
     curl_global_cleanup();
 }
 
@@ -238,6 +238,8 @@ void psd_start(psd_callback_t callback, void *userData) {
 // FOR TESTING ONLY
 int main(int argc, char **argv) {
 
+    psd_init();
+
     buffer data;
     // Should be null terminated
     bool success = resourceGet("testFile.txt", &data);
@@ -256,6 +258,8 @@ int main(int argc, char **argv) {
     } else {
         printf("Error getting web resource (what happened!?)\n");
     }
+
+    psd_cleanup();
 
     return 0;
 }

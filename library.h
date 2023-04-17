@@ -46,7 +46,7 @@ void psd_fn_sql(psd_state *s, bool effect, const char *sql, const psd_fn_params,
 
 void psd_start(psd_callback_t callback, void *userData);
 bool psd_init();
-void psd_uninit();
+void psd_cleanup();
 
 // --- Memory ---
 
