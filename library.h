@@ -64,8 +64,9 @@ void psd_fn_validate(psd_state *s, bool effect, const char *value, const char *r
 
 // --- Control ---
 
-void psd_reset(psd_state *s);
-// Error: 
+// Error: PSD_LIB_EIO
+psd_err psd_reset(psd_state *s);
+// Error: PSD_LIB_EIO
 psd_err psd_commit(psd_state *s);
 
 // --- Initialization ---

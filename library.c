@@ -36,6 +36,7 @@ typedef struct {
 
 typedef psd_err(*fsCallback_t)(char*, FILE*);
 
+// WARNING: Continues despite errors
 static psd_err filesystemPerform(psd_state *s, fsCallback_t callback);
 static psd_err callback_filesystemReset(char *key, FILE *value);
 static psd_err callback_filesystemCommit(char *key, FILE *value);
@@ -77,10 +78,11 @@ psd_err filesystemPerform(psd_state *s, fsCallback_t callback) {
         psd_hashmap_get(s->filesystem, result, &value, sizeof(FILE*));
         char *key = (char *) malloc(sizeof(char) * result.keyLength);
         psd_hashmap_getKey(s->filesystem, result, key, sizeof(char) * result.keyLength);
-        error = callback(key, value);
+        err e = callback(key, value);
         free(key);
+        // WARNING: Continuing despite errors
         if (isError(error)) {
-            break;
+            error = e;
         }
     }
 
@@ -88,6 +90,8 @@ psd_err filesystemPerform(psd_state *s, fsCallback_t callback) {
 }
 
 psd_err callback_filesystemReset(char *, FILE *handle) {
+    // We use tmpfile - the file is deleted automatically
+    // when the file is closed.
     int code = fclose(handle);
     if (code == EOF) {
         return mkError(PSD_LIB_EIO, "Close file");
@@ -343,7 +347,8 @@ void psd_fn_validate(psd_state *s, bool effect, const char *value, const char *r
 // --- Control ---
 
 psd_err psd_reset(psd_state *s) {
-    return filesystemPerform(s, callback_filesystemReset);
+    psd_err err = filesystemPerform(s, callback_filesystemReset);
+    psd_hashmap_clear(s->filesystem);
     /*
     // TODO: Reduce code by using bitfields and batching???
     psd_hashmap_iterator it;
