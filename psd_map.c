@@ -2,8 +2,9 @@
 #include <string.h>
 
 #define BUCKET_SIZE_STEP 4
+#define FILE_COPY_BUFFER_SIZE 0xFFFF
 
-// --- Static methods ---
+// --- Static helper methods ---
 
 static int stringMD5(const char *str);
 static size_t stmin(size_t a, size_t b);
@@ -110,8 +111,11 @@ psd_hashmap_searchResult psd_hashmap_search(psd_hashmap *m, const char *key) {
     result.data = data;
     result.code = status;
     result.length = 0;
+    result.length = 0;
+    result.keyLength = 0;
     if (status == PSD_HASHMAP_EOK) {
         result.length = m->buckets[bucket].data[data].valueLen;
+        result.keyLength = m->buckets[bucket].data[data].keyLen;
     }
     return result;
 }
@@ -123,11 +127,25 @@ size_t psd_hashmap_get(const psd_hashmap *m, psd_hashmap_searchResult search, vo
     return writeLen;
 }
 
+size_t psd_hashmap_getKey(const psd_hashmap *m, psd_hashmap_searchResult search, char *data, size_t count) {
+    psd_hashmap_data d = m->buckets[search.bucket].data[search.data].value;
+    size_t writeLen = stmin(count, d.keyLen);
+    memcpy(data, d.key, writeLen);
+    return writeLen;
+}
+
 void psd_hashmap_remove(psd_hashmap *m, psd_hashmap_searchResult search) {
     psd_hashmap_bucket *b = m->buckets + search.bucket;
     b->data[search.data] = b->data[b->length - 1];
     b->length--;
     m->elements--;
+}
+
+void psd_hashmap_clear(psd_hashmap *m) {
+    for (size_t b = 0; b < m->nBuckets; b++) {
+        m->buckets[b].length = 0;
+    }
+    // Yeah that was pretty easy
 }
 
 // --- Iteration ---
@@ -182,6 +200,7 @@ psd_hashmap_searchResult psd_hashmap_iterator_get(psd_hashmap_iterator i) {
     result.bucket = i.bucket;
     result.data = i.data;
     result.length = i.m->buckets[i.bucket].data[i.data].valueLen;
+    result.keyLength = i.m->buckets[i.bucket].data[i.data].keyLen;
     result.code = PSD_HASHMAP_EOK;
     return result;
 }

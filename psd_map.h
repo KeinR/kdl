@@ -38,6 +38,7 @@ typedef struct {
     size_t data;
 
     size_t length;
+    size_t keyLength;
     int code;
 } psd_hashmap_searchResult;
 
@@ -56,7 +57,9 @@ int psd_hashmap_insert(psd_hashmap *m, const char *key, const char *value, size_
 // Searches are valid so long as the underlying container has not been modified
 psd_hashmap_searchResult psd_hashmap_search(psd_hashmap *m, const char *key);
 size_t psd_hashmap_get(const psd_hashmap *m, psd_hashmap_searchResult search, void *data, size_t count);
+size_t psd_hashmap_getKey(const psd_hashmap *m, psd_hashmap_searchResult search, char *data, size_t count);
 void psd_hashmap_remove(psd_hashmap *m, psd_hashmap_searchResult search);
+void psd_hashmap_clear(psd_hashmap *m);
 
 // --- Iteration ---
 
@@ -66,7 +69,9 @@ void psd_hashmap_remove(psd_hashmap *m, psd_hashmap_searchResult search);
 
 void psd_hashmap_iterator_init(const psd_hashmap *m, psd_hashmap_iterator *i);
 void psd_hashmap_iterator_start(psd_hashmap_iterator *i);
+// Returns errors: PSD_HASHMAP_EOK, PSD_HASHMAP_EEND
 int psd_hashmap_iterator_next(psd_hashmap_iterator *i);
+// Returns errors: PSD_HASHMAP_EOK, PSD_HASHMAP_EEND
 int psd_hashmap_iterator_prev(psd_hashmap_iterator *i);
 psd_hashmap_searchResult psd_hashmap_iterator_get(psd_hashmap_iterator i);
 
