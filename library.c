@@ -3,7 +3,6 @@
 
 // Base
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 #include <assert.h>
 #include <regex.h> // Non-standard lol get out of here w*ndows
@@ -20,6 +19,8 @@
 // somewhat about cross compatability so I won't bother with the header.
 // linux/limits.h btw
 #define PATH_MAX_LEN 4096
+
+#define FILE_COPY_BUFFER_SIZE 0xFFFF
 
 // This ^2 is the # of buckets
 #define BUCKET_PRECISION 5
@@ -48,12 +49,10 @@ static psd_err startsWith(const char *str, const char *sequence, bool *result);
 static long fileSize(FILE *fp);
 static psd_err urlGet(const char *url, buffer *out);
 static psd_err fileGet(const char *path, buffer *out);
-bool resourceGet(const char *url, buffer *out);
+static psd_err resourceGet(const char *url, buffer *out);
 static size_t callback_curl_writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata);
 static void freeBuffer(buffer *buf);
-static void setError(psd_state *s, const char *message, int code);
-static bool checkError(psd_state *s);
-static psd_err mkError(const char *message, int code);
+static psd_err mkError(int code, const char *message);
 static psd_err noError();
 static bool isError(psd_err error);
 
@@ -67,7 +66,7 @@ buffer mkBuffer() {
 }
 
 psd_err filesystemPerform(psd_state *s, fsCallback_t callback) {
-    psd_err error = PSD_LIB_EOK;
+    psd_err error = noError();
     psd_hashmap_iterator it;
     psd_hashmap_iterator_init(&s->filesystem, &it);
 
@@ -75,10 +74,10 @@ psd_err filesystemPerform(psd_state *s, fsCallback_t callback) {
         psd_hashmap_searchResult result = psd_hashmap_iterator_get(it);
         assert(result.length == sizeof(FILE*));
         FILE *value = NULL;
-        psd_hashmap_get(s->filesystem, result, &value, sizeof(FILE*));
+        psd_hashmap_get(&s->filesystem, result, &value, sizeof(FILE*));
         char *key = (char *) malloc(sizeof(char) * result.keyLength);
-        psd_hashmap_getKey(s->filesystem, result, key, sizeof(char) * result.keyLength);
-        err e = callback(key, value);
+        psd_hashmap_getKey(&s->filesystem, result, key, sizeof(char) * result.keyLength);
+        psd_err e = callback(key, value);
         free(key);
         // WARNING: Continuing despite errors
         if (isError(error)) {
@@ -101,13 +100,10 @@ psd_err callback_filesystemReset(char *, FILE *handle) {
 
 psd_err callback_filesystemCommit(char *path, FILE *from) {
     FILE *to = fopen(path, "w+");
-    err error = fileCopy(from, to);
-    int code = fclose(file);
+    psd_err error = copyFile(from, to);
+    int code = fclose(to);
     free(path);
-    if (isError(error)) {
-        break;
-    }
-    if (code == EOF) {
+    if (!isError(error) && code == EOF) {
         error = mkError(PSD_LIB_EIO, "Close file");
     }
     return error;
@@ -122,11 +118,11 @@ psd_err copyFile(FILE *src, FILE *dest) {
     size_t read = 0;
     size_t wrote = 0;
     do {
-        read = fread(buffer, bufSize, src);
+        read = fread(buffer, sizeof(char), bufSize, src);
         if (ferror(src)) {
             error = mkError(PSD_LIB_EIO, "Read file");
         } else {
-            wrote = fwrite(buffer, bufSize, dest);
+            wrote = fwrite(buffer, sizeof(char), bufSize, dest);
             if (wrote != read) {
                 error = mkError(PSD_LIB_EIO, "Write file");
             }
@@ -145,7 +141,7 @@ psd_err addNullTerminator(buffer *buf) {
     }
     buf->data[buf->length] = '\0';
     buf->length = newLength;
-    return return PSD_LIB_EOK;
+    return noError();
 }
 
 psd_err regexMatch(const char *string, const char *regex, buffer *out) {
@@ -178,7 +174,7 @@ psd_err regexMatch(const char *string, const char *regex, buffer *out) {
 }
 
 
-int startsWith(const char *str, const char *sequence, bool *result) {
+psd_err startsWith(const char *str, const char *sequence, bool *result) {
     for (size_t i = 0;; i++) {
         if (!sequence[i]) {
             *result = true;
@@ -192,11 +188,11 @@ int startsWith(const char *str, const char *sequence, bool *result) {
         if (i > STRING_OVERRUN_MAX) {
             // Critical: invalid string
             // Possible corruption
-            return mkError(PSD_LIB_CORRUPTION, "Iterate string, no null terminator");
+            return mkError(PSD_LIB_ECORRUPTION, "Iterate string, no null terminator");
         }
     }
     *result = false;
-    return PSD_LIB_EOK;
+    return noError();
 }
 
 long fileSize(FILE *fp) {
@@ -226,10 +222,10 @@ psd_err urlGet(const char *url, buffer *out) {
 
     curl_easy_cleanup(handle);
     *out = buffer;
-    return success;
+    return error;
 }
 
-int fileGet(const char *path, buffer *out) {
+psd_err fileGet(const char *path, buffer *out) {
     FILE *file = fopen(path, "r");
     if (file == NULL) {
         return mkError(PSD_LIB_EIO, "Open file for reading");
@@ -258,13 +254,13 @@ int fileGet(const char *path, buffer *out) {
     }
 
     *out = b;
-    return true;
+    return noError();
 }
 
-int resourceGet(const char *url, buffer *out) {
+psd_err resourceGet(const char *url, buffer *out) {
     bool isUrl = false;
-    int e = startsWith(url, "http", &isUrl);
-    if (e != PSD_LIB_EOK) {
+    psd_err e = startsWith(url, "http", &isUrl);
+    if (isError(e)) {
         assert(false); // We are literally using a string literal how
         return e;
     }
@@ -275,7 +271,7 @@ int resourceGet(const char *url, buffer *out) {
     }
 }
 
-size_t curl_writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata) {
+size_t callback_curl_writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata) {
     buffer *buf = (buffer *) userdata;
     int newLength = buf->length + nmemb;
     if (newLength > MAX_FILE_SIZE) {
@@ -294,16 +290,7 @@ void freeBuffer(buffer *buf) {
     buf->length = 0;
 }
 
-void setError(psd_state *s, const char *message, int code) {
-    s->errCode = code;
-    s->errMsg = message;
-}
-
-bool checkError(psd_state *s) {
-    return s->errorCode != PSD_LIB_EOK;
-}
-
-psd_err mkError(const char *message, int code) {
+psd_err mkError(int code, const char *message) {
     psd_err e;
     e.message = message;
     e.code = code;
@@ -323,32 +310,33 @@ bool isError(psd_err error) {
 
 // --- Library functions ---
 
-void psd_fn_scrape_regex(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *regex, psd_fn_out *out) {
+psd_err psd_fn_scrape_regex(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *regex, psd_fn_out *out) {
+    /*
     buffer data = mkBuffer();
     if (!getData(url, &data)) {
         // TERMINATION - ERROR
     }
+    */
 
 }
 
-void psd_fn_scrape_xpath(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *xpath, psd_fn_out *out) {
+psd_err psd_fn_scrape_xpath(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *xpath, psd_fn_out *out) {
 
 }
 
-void psd_fn_sql(psd_state *s, bool effect, const char *sql, const psd_fn_params, psd_fn_out *out) {
+psd_err psd_fn_sql(psd_state *s, bool effect, const char *sql, const psd_fn_params, psd_fn_out *out) {
 
 }
 
-void psd_fn_validate(psd_state *s, bool effect, const char *value, const char *regex) {
+psd_err psd_fn_validate(psd_state *s, bool effect, const char *value, const char *regex) {
 
 }
-
 
 // --- Control ---
 
 psd_err psd_reset(psd_state *s) {
     psd_err err = filesystemPerform(s, callback_filesystemReset);
-    psd_hashmap_clear(s->filesystem);
+    psd_hashmap_clear(&s->filesystem);
 }
 
 psd_err psd_commit(psd_state *s) {
@@ -372,13 +360,13 @@ void psd_globalCleanup() {
 }
 
 void psd_init(psd_state *s) {
-    psd_hashmap_init(s->filesystem, BUCKET_PRECISION);
+    psd_hashmap_init(&s->filesystem, BUCKET_PRECISION);
 }
 
 // --- Memory ---
 
 void psd_free(psd_state *s) {
-    psd_hashmap_free(s->filesystem);
+    psd_hashmap_free(&s->filesystem);
 }
 
 void psd_free_out(psd_fn_out *out) {
@@ -394,6 +382,7 @@ void psd_free_out(psd_fn_out *out) {
 // FOR TESTING ONLY
 int main(int argc, char **argv) {
 
+    /*
     psd_init();
 
     psd_hashmap map;
@@ -420,6 +409,7 @@ int main(int argc, char **argv) {
     }
 
     psd_cleanup();
+    */
 
     return 0;
 }

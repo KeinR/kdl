@@ -1,8 +1,12 @@
-#include <openssl/md5.h>
+#include "psd_hashmap.h"
+
+#include <sys/types.h>
+#include <md5.h>
 #include <string.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 #define BUCKET_SIZE_STEP 4
-#define FILE_COPY_BUFFER_SIZE 0xFFFF
 
 // --- Static helper methods ---
 
@@ -15,13 +19,13 @@ static int findIndex(psd_hashmap *m, const char *key, size_t *bucket, size_t *da
 int stringMD5(const char *str) {
     int length = strlen(str);
     MD5_CTX c;
-    unsigned char digest[16];
+    uint8_t digest[16];
 
-    MD5_Init(&c);
-    MD5_Update(&c, str, length);
-    MD5_Final(digest, &c);
+    MD5Init(&c);
+    MD5Update(&c, str, length);
+    MD5Final(digest, &c);
 
-    return *((unsigned int*)digest)
+    return *((unsigned int*)digest);
 }
 
 size_t stmin(size_t a, size_t b) {
@@ -49,13 +53,13 @@ int getIndex(const psd_hashmap *m, const char *key) {
 }
 
 int findIndex(psd_hashmap *m, const char *key, size_t *bucket, size_t *data) {
-    const int iKey = getIndex(key);
+    const int iKey = getIndex(m, key);
     const int kLen = stringLength(key);
     psd_hashmap_bucket *b = m->buckets + iKey;
     for (size_t i = 0; i < b->length; i++) {
         psd_hashmap_data *d = b->data + i;
         if (stringsEqual(key, kLen, d->key, d->keyLen)) {
-            *bucket = key;
+            *bucket = iKey;
             *data = i;
             return PSD_HASHMAP_EOK;
         }
@@ -75,8 +79,8 @@ int psd_hashmap_insert(psd_hashmap *m, const char *key, const void *value, size_
     const int iKey = getIndex(m, key);
     psd_hashmap_bucket *b = m->buckets + iKey;
     const int newLength = b->length + 1;
-    if (newLength > size) {
-        const int newSize = size + BUCKET_SIZE_STEP;
+    if (newLength > b->size) {
+        const int newSize = b->size + BUCKET_SIZE_STEP;
         b->data = realloc(b->data, sizeof(psd_hashmap_data) * newSize);
         if (b->data == NULL) {
             return PSD_HASHMAP_ENOMEM;
@@ -121,14 +125,14 @@ psd_hashmap_searchResult psd_hashmap_search(psd_hashmap *m, const char *key) {
 }
 
 size_t psd_hashmap_get(const psd_hashmap *m, psd_hashmap_searchResult search, void *data, size_t count) {
-    psd_hashmap_data d = m->buckets[search.bucket].data[search.data].value;
+    psd_hashmap_data d = m->buckets[search.bucket].data[search.data];
     size_t writeLen = stmin(count, d.valueLen);
     memcpy(data, d.value, writeLen);
     return writeLen;
 }
 
 size_t psd_hashmap_getKey(const psd_hashmap *m, psd_hashmap_searchResult search, char *data, size_t count) {
-    psd_hashmap_data d = m->buckets[search.bucket].data[search.data].value;
+    psd_hashmap_data d = m->buckets[search.bucket].data[search.data];
     size_t writeLen = stmin(count, d.keyLen);
     memcpy(data, d.key, writeLen);
     return writeLen;
@@ -138,7 +142,7 @@ void psd_hashmap_remove(psd_hashmap *m, psd_hashmap_searchResult search) {
     psd_hashmap_bucket *b = m->buckets + search.bucket;
     b->data[search.data] = b->data[b->length - 1];
     b->length--;
-    m->elements--;
+    m->nElements--;
 }
 
 void psd_hashmap_clear(psd_hashmap *m) {
@@ -150,7 +154,7 @@ void psd_hashmap_clear(psd_hashmap *m) {
 
 // --- Iteration ---
 
-void psd_hashmap_iterator_init(psd_hashmap *m, psd_hashmap_iterator *i) {
+void psd_hashmap_iterator_init(const psd_hashmap *m, psd_hashmap_iterator *i) {
     i->m = m;
     i->bucket = 0;
     i->data = 0;
@@ -158,7 +162,7 @@ void psd_hashmap_iterator_init(psd_hashmap *m, psd_hashmap_iterator *i) {
 }
 
 void psd_hashmap_iterator_start(psd_hashmap_iterator *i) {
-    i->start = 0;
+    i->bucket= 0;
     i->data = 0;
     psd_hashmap_iterator_next(i);
 }
@@ -166,14 +170,14 @@ void psd_hashmap_iterator_start(psd_hashmap_iterator *i) {
 int psd_hashmap_iterator_next(psd_hashmap_iterator *i) {
     psd_hashmap_iterator it = *i;
     it.data++;
-    if (it.data > it.m[it.bucket].length) {
+    if (it.data >= it.m->buckets[it.bucket].length) {
         it.data = 0;
         do {
             it.bucket++;
-            if (it.bucket >= it.m.nBuckets) {
+            if (it.bucket >= it.m->nBuckets) {
                 return PSD_HASHMAP_EEND;
             }
-        } while (i.m[i.bucket].length == 0);
+        } while (it.m->buckets[it.bucket].length == 0);
     }
     *i = it;
     return PSD_HASHMAP_EOK;
@@ -183,11 +187,12 @@ int psd_hashmap_iterator_prev(psd_hashmap_iterator *i) {
     psd_hashmap_iterator it = *i;
     if (it.data == 0) {
         do {
-            if (i.bucket == 0) {
+            if (it.bucket == 0) {
                 return PSD_HASHMAP_EEND;
             }
-        } while (i.m[i.bucket].length == 0);
-        it.data = i.m[i.bucket].length - 1;
+            it.bucket--;
+        } while (it.m->buckets[it.bucket].length == 0);
+        it.data = it.m->buckets[it.bucket].length - 1;
     } else {
         it.data--;
     }
@@ -208,12 +213,13 @@ psd_hashmap_searchResult psd_hashmap_iterator_get(psd_hashmap_iterator i) {
 // --- Memory and initailization ---
 
 int psd_hashmap_reclaim(psd_hashmap *m) {
-    for (size_t b = 0; b < b->nBuckets; b++) {
-        psd_hashmap_bucket *bu = m->buckets + i;
-        bu->data = (char *) realloc(bu->data, sizeof(char) * bu->length);
+    for (size_t b = 0; b < m->nBuckets; b++) {
+        psd_hashmap_bucket *bu = m->buckets + b;
+        bu->data = (psd_hashmap_data *) realloc(bu->data, sizeof(psd_hashmap_data) * bu->length);
         if (bu->data == NULL) {
             bu->size = 0;
             bu->length = 0;
+            // This error causes a memory leak lol
             return PSD_HASHMAP_ENOMEM;
         }
         bu->size = bu->length;
@@ -234,7 +240,7 @@ void psd_hashmap_free(psd_hashmap *m) {
     m->nBuckets = 0;
 }
 
-int psd_hashmap_init(psd_hashmap *m, uint8_t precision) {
+int psd_hashmap_init(psd_hashmap *m, int precision) {
     m->precision = precision;
     m->error = "";
     m->nElements = 0;

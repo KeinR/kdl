@@ -2,10 +2,12 @@
 #define PSD_LIB_H_INCLUDED
 
 // Local
-#include "psd_map.h"
+#include "psd_hashmap.h"
 
 // Base
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
 
 // -- Error codes ---
 
@@ -52,15 +54,15 @@ typedef struct {
 
 typedef struct {
     // Maps files to temporary file handles
-    psd_map filesystem;
+    psd_hashmap filesystem;
 } psd_state;
 
 // --- Library functions ---
 
-void psd_fn_scrape_regex(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *regex, psd_fn_out *out);
-void psd_fn_scrape_xpath(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *xpath, psd_fn_out *out);
-void psd_fn_sql(psd_state *s, bool effect, const char *sql, const psd_fn_params, psd_fn_out *out);
-void psd_fn_validate(psd_state *s, bool effect, const char *value, const char *regex);
+psd_err psd_fn_scrape_regex(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *regex, psd_fn_out *out);
+psd_err psd_fn_scrape_xpath(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *xpath, psd_fn_out *out);
+psd_err psd_fn_sql(psd_state *s, bool effect, const char *sql, const psd_fn_params, psd_fn_out *out);
+psd_err psd_fn_validate(psd_state *s, bool effect, const char *value, const char *regex);
 
 // --- Control ---
 
