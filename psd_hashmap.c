@@ -81,10 +81,13 @@ int psd_hashmap_insert(psd_hashmap *m, const char *key, const void *value, size_
     const int newLength = b->length + 1;
     if (newLength > b->size) {
         const int newSize = b->size + BUCKET_SIZE_STEP;
-        b->data = realloc(b->data, sizeof(psd_hashmap_data) * newSize);
-        if (b->data == NULL) {
+        psd_hashmap_data *data = (psd_hashmap_data *) realloc(b->data, sizeof(psd_hashmap_data) * newSize);
+        if (data == NULL) {
+            // Expect that in this event the user will still deallocate the
+            // hashmap if such an error is thrown
             return PSD_HASHMAP_ENOMEM;
         }
+        b->data = data;
         b->size = newSize;
     }
     psd_hashmap_data e;
@@ -215,13 +218,12 @@ psd_hashmap_searchResult psd_hashmap_iterator_get(psd_hashmap_iterator i) {
 int psd_hashmap_reclaim(psd_hashmap *m) {
     for (size_t b = 0; b < m->nBuckets; b++) {
         psd_hashmap_bucket *bu = m->buckets + b;
-        bu->data = (psd_hashmap_data *) realloc(bu->data, sizeof(psd_hashmap_data) * bu->length);
-        if (bu->data == NULL) {
-            bu->size = 0;
-            bu->length = 0;
-            // This error causes a memory leak lol
+        psd_hashmap_data *data = (psd_hashmap_data *) realloc(bu->data, sizeof(psd_hashmap_data) * bu->length);
+        if (data == NULL) {
+            // Doesn't make much sense but okay
             return PSD_HASHMAP_ENOMEM;
         }
+        bu->data = data;
         bu->size = bu->length;
     }
     return PSD_HASHMAP_EOK;

@@ -86,6 +86,7 @@ psd_hashmap_searchResult psd_hashmap_iterator_get(psd_hashmap_iterator i);
 // Returns errors: PSD_HASHMAP_ENOMEM
 int psd_hashmap_reclaim(psd_hashmap *m);
 void psd_hashmap_free(psd_hashmap *m);
+// Returns errors: PSD_HASHMAP_ENOMEM
 int psd_hashmap_init(psd_hashmap *m, int precision);
 
 #endif
