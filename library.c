@@ -349,52 +349,10 @@ void psd_fn_validate(psd_state *s, bool effect, const char *value, const char *r
 psd_err psd_reset(psd_state *s) {
     psd_err err = filesystemPerform(s, callback_filesystemReset);
     psd_hashmap_clear(s->filesystem);
-    /*
-    // TODO: Reduce code by using bitfields and batching???
-    psd_hashmap_iterator it;
-    psd_hashmap_iterator_init(&s->filesystem, &it);
-
-    for (int code = PSD_HASHMAP_EOK; code == PSD_HASHMAP_EOK; code = psd_hashmap_iterator_next(&it)) {
-        psd_hashmap_searchResult result = psd_hashmap_iterator_get(it);
-        assert(result.length == sizeof(FILE*));
-        FILE *handle = NULL;
-        psd_hashmap_get(s->filesystem, result, &handle, sizeof(FILE*));
-        int r = fclose(handle);
-
-    }
-
-    psd_hashmap_clear(s->filesystem);
-    */
 }
 
 psd_err psd_commit(psd_state *s) {
     return filesystemPerform(s, callback_filesystemCommit);
-    /*
-    psd_err error = PSD_LIB_EOK;
-    psd_hashmap_iterator it;
-    psd_hashmap_iterator_init(&s->filesystem, &it);
-
-    for (int code = PSD_HASHMAP_EOK; code == PSD_HASHMAP_EOK; code = psd_hashmap_iterator_next(&it)) {
-        psd_hashmap_searchResult result = psd_hashmap_iterator_get(it);
-        assert(result.length == sizeof(FILE*));
-        FILE *from = NULL;
-        psd_hashmap_get(s->filesystem, result, &from, sizeof(FILE*));
-        char *path = (char *) malloc(sizeof(char) * result.keyLength);
-        FILE *to = fopen(path, "w+");
-        error = fileCopy(from, to);
-        int closeCode = fclose(file);
-        free(path);
-        if (isError(error)) {
-            break;
-        }
-        if (closeCode == EOF) {
-            error = mkError(PSD_LIB_EIO, "Closing file");
-            break;
-        }
-    }
-
-    return error;
-    */
 }
 
 // --- Initialization ---
@@ -412,7 +370,6 @@ bool psd_globalInit() {
 void psd_globalCleanup() {
     curl_global_cleanup();
 }
-
 
 void psd_init(psd_state *s) {
     psd_hashmap_init(s->filesystem, BUCKET_PRECISION);
