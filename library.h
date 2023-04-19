@@ -27,6 +27,8 @@
 #define PSD_LIB_ERCMP 6
 // Regex execution
 #define PSD_LIB_EREXE 7
+// Regex (execution) no match
+#define PSD_LIB_ERMATCH 8
 
 // --- Structures ---
 
@@ -71,10 +73,10 @@ bool psd_isError(psd_err e);
 // Uses POSIX Extended Regex
 // This is NOT Perl-style
 // See: https://en.wikibooks.org/wiki/Regular_Expressions/POSIX-Extended_Regular_Expressions
-psd_err psd_fn_scrape_regex(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *regex, psd_fn_out *out);
-psd_err psd_fn_scrape_xpath(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *xpath, psd_fn_out *out);
-psd_err psd_fn_sql(psd_state *s, bool effect, const char *sql, const psd_fn_params, psd_fn_out *out);
-psd_err psd_fn_validate(psd_state *s, bool effect, const char *value, const char *regex);
+psd_err psd_fn_scrape_regex(psd_state *s, const char *url, const char *regex, const psd_fn_params params, psd_fn_out *out);
+psd_err psd_fn_scrape_xpath(psd_state *s, const char *url, const char *xpath, const psd_fn_params params, psd_fn_out *out);
+psd_err psd_fn_sql(psd_state *s, const char *sql, const psd_fn_params, psd_fn_out *out);
+psd_err psd_fn_validate(psd_state *s, const char *value, const char *regex, bool *validation);
 
 // --- Control ---
 

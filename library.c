@@ -50,6 +50,7 @@ static psd_err callback_filesystemCommit(char *key, FILE *value);
 // Returns error: PSD_LIB_EOK, PSD_LIB_EIO
 static psd_err copyFile(FILE *src, FILE *dest);
 static void saveRegexError(int code, regex_t *handle, psd_errMsgBuf *errMsg);
+// out and nMatches may be NULL
 static psd_err regexMatch(const char *string, const char *regex, regmatch_t **out, int *nMatches, psd_errMsgBuf *errMsg);
 static psd_err startsWith(const char *str, const char *sequence, bool *result);
 static long fileSize(FILE *fp);
@@ -213,19 +214,30 @@ psd_err regexMatch(const char *string, const char *regex, regmatch_t **out, int 
         saveRegexError(compRes, &handle, errMsg);
         error = mkError(PSD_LIB_ERCMP, "Compile regex");
     } else {
-        // TODO: Get the number of matches and store it in *nMatches
-        size_t matchesSize = MAX_REGEX_MATCHES;
-        regmatch_t *matches = (regmatch_t *) malloc(sizeof(regmatch_t) * matchesSize);
+        size_t matchesSize = 0;
+        regmatch_t *matches = NULL;
+        if (out != NULL) {
+            matchesSize = MAX_REGEX_MATCHES;
+            matches = (regmatch_t *) malloc(sizeof(regmatch_t) * matchesSize);
+        }
         int execRes = regexec(&handle, string, matchesSize, matches, eflags);
         if (execRes) {
             saveRegexError(execRes, &handle, errMsg);
-            error = mkError(PSD_LIB_EREXE, "Execute regex");
+            if (execRes == REG_NOMATCH) {
+                error = mkError(PSD_LIB_ERMATCH, "Execute regex - no match");
+            } else {
+                error = mkError(PSD_LIB_EREXE, "Execute regex");
+            }
             free(matches);
         } else {
-            // man 3 regex:
-            // "Any unused structure elements will contain the value -1."
-            for ((*nMatches) = 0; matches[*nMatches].rm_so != -1 && *nMatches < MAX_REGEX_MATCHES; (*nMatches)++);
-            *out = matches;
+            if (nMatches != NULL) {
+                // man 3 regex:
+                // "Any unused structure elements will contain the value -1."
+                for ((*nMatches) = 0; matches[*nMatches].rm_so != -1 && *nMatches < MAX_REGEX_MATCHES; (*nMatches)++);
+            }
+            if (out != NULL) {
+                *out = matches;
+            }
         }
     }
 
@@ -384,7 +396,7 @@ bool psd_isError(psd_err error) {
 
 // --- Library functions ---
 
-psd_err psd_fn_scrape_regex(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *regex, psd_fn_out *out) {
+psd_err psd_fn_scrape_regex(psd_state *s, const char *url, const char *regex, const psd_fn_params params, psd_fn_out *out) {
     psd_err error = noError();
     regmatch_t *searchResults = NULL;
     int nMatches = 0;
@@ -431,19 +443,25 @@ cleanup:
     return error;
 }
 
-psd_err psd_fn_scrape_xpath(psd_state *s, bool effect, const char *url, const psd_fn_params params, const char *xpath, psd_fn_out *out) {
+psd_err psd_fn_scrape_xpath(psd_state *s, const char *url, const char *xpath, const psd_fn_params params, psd_fn_out *out) {
     assert(false);
     return noError();
 }
 
-psd_err psd_fn_sql(psd_state *s, bool effect, const char *sql, const psd_fn_params, psd_fn_out *out) {
+psd_err psd_fn_sql(psd_state *s, const char *sql, const psd_fn_params, psd_fn_out *out) {
     assert(false);
     return noError();
 }
 
-psd_err psd_fn_validate(psd_state *s, bool effect, const char *value, const char *regex) {
-    assert(false);
-    return noError();
+psd_err psd_fn_validate(psd_state *s, const char *value, const char *regex, bool *validation) {
+    psd_err error = regexMatch(value, regex, NULL, NULL, &s->errMsg);
+    if (error.code == PSD_LIB_ERMATCH) {
+        *validation = false;
+        error = noError();
+    } else {
+        *validation = true;
+    }
+    return error;
 }
 
 // --- Control ---
@@ -529,7 +547,7 @@ int main(int argc, char **argv) {
     psd_fn_out out;
     out.list = NULL;
     out.length = 0;
-    psd_err e = psd_fn_scrape_regex(&state, false, "https://debuginfod.archlinux.org/", params, "https://([^/]+?)", &out);
+    psd_err e = psd_fn_scrape_regex(&state, "https://debuginfod.archlinux.org/", "https://([^/]+?)", params, &out);
 
     printf("results: %li\n", out.length);
     printf("error: %s\n", e.message);
