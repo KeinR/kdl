@@ -59,6 +59,11 @@ typedef struct {
 } psd_errMsgBuf;
 
 typedef struct {
+    double number;
+    const char *string;
+} psd_sqlParam;
+
+typedef struct {
     // Maps files to temporary file handles
     psd_hashmap filesystem;
     psd_errMsgBuf errMsg;
@@ -75,7 +80,11 @@ bool psd_isError(psd_err e);
 // See: https://en.wikibooks.org/wiki/Regular_Expressions/POSIX-Extended_Regular_Expressions
 psd_err psd_fn_scrape_regex(psd_state *s, const char *url, const char *regex, const psd_fn_params params, psd_fn_out *out);
 psd_err psd_fn_scrape_xpath(psd_state *s, const char *url, const char *xpath, const psd_fn_params params, psd_fn_out *out);
-psd_err psd_fn_sql(psd_state *s, const char *sql, const psd_fn_params, psd_fn_out *out);
+psd_sqlparam psd_mkParam_double(double val);
+// NOTE: Does not copy the string, only records the pointer
+psd_sqlparam psd_mkParam_string(const char *str);
+// The index in `params` is treated as the second parameter described here https://www.sqlite.org/c3ref/bind_blob.html
+psd_err psd_fn_sql(psd_state *s, const char *sql, const psd_sqlParam *params, psd_fn_out *out);
 psd_err psd_fn_validate(psd_state *s, const char *value, const char *regex, bool *validation);
 
 // --- Control ---

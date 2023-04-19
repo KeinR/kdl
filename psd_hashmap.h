@@ -62,8 +62,11 @@ size_t psd_hashmap_size(const psd_hashmap *m);
 int psd_hashmap_insert(psd_hashmap *m, const char *key, const void *value, size_t valueLen);
 // Searches are valid so long as the underlying container has not been modified
 psd_hashmap_searchResult psd_hashmap_search(psd_hashmap *m, const char *key);
-size_t psd_hashmap_get(const psd_hashmap *m, psd_hashmap_searchResult search, void *data, size_t count);
-size_t psd_hashmap_getKey(const psd_hashmap *m, psd_hashmap_searchResult search, char *data, size_t count);
+// These two getters pretty much just return the pointer to the data.
+// They do NOT copy anything.
+// `count` is the length of the pointed data, and may be null.
+void psd_hashmap_get(const psd_hashmap *m, psd_hashmap_searchResult search, void **data, size_t *count);
+void psd_hashmap_getKey(const psd_hashmap *m, psd_hashmap_searchResult search, char **data, size_t *count);
 void psd_hashmap_remove(psd_hashmap *m, psd_hashmap_searchResult search);
 void psd_hashmap_clear(psd_hashmap *m);
 

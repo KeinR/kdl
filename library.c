@@ -45,14 +45,15 @@ static psd_err dataAppend(char **data, size_t *length, size_t *size, size_t buff
 static psd_err formatString(const char *template, psd_fn_params params, buffer *out);
 // WARNING: Continues despite errors
 static psd_err filesystemPerform(psd_state *s, fsCallback_t callback);
-static psd_err callback_filesystemReset(char *key, FILE *value);
-static psd_err callback_filesystemCommit(char *key, FILE *value);
+static psd_err callback_filesystemReset(char *key, const char *value);
+static psd_err callback_filesystemCommit(char *key, const char *value);
 // Returns error: PSD_LIB_EOK, PSD_LIB_EIO
 static psd_err copyFile(FILE *src, FILE *dest);
 static void saveRegexError(int code, regex_t *handle, psd_errMsgBuf *errMsg);
 // out and nMatches may be NULL
 static psd_err regexMatch(const char *string, const char *regex, regmatch_t **out, int *nMatches, psd_errMsgBuf *errMsg);
 static psd_err startsWith(const char *str, const char *sequence, bool *result);
+static psd_sqlParam mkSqlParam(double number, const char *string);
 static long fileSize(FILE *fp);
 // All 3 ensure null terminator
 static psd_err urlGet(const char *url, buffer *out);
@@ -137,14 +138,13 @@ psd_err filesystemPerform(psd_state *s, fsCallback_t callback) {
 
     for (int code = PSD_HASHMAP_EOK; code == PSD_HASHMAP_EOK; code = psd_hashmap_iterator_next(&it)) {
         psd_hashmap_searchResult result = psd_hashmap_iterator_get(it);
-        assert(result.length == sizeof(FILE*));
-        FILE *value = NULL;
-        psd_hashmap_get(&s->filesystem, result, &value, sizeof(FILE*));
-        char *key = (char *) malloc(sizeof(char) * result.keyLength);
-        psd_hashmap_getKey(&s->filesystem, result, key, sizeof(char) * result.keyLength);
+        assert(result.length == sizeof(char*));
+        char *value = NULL;
+        char *key = NULL;
+        psd_hashmap_get(&s->filesystem, result, &value, NULL);
+        psd_hashmap_getKey(&s->filesystem, result, &key, NULL);
         psd_err e = callback(key, value);
-        free(key);
-        // WARNING: Continuing despite errors
+        // NOTE: Continuing despite errors
         if (psd_isError(error)) {
             error = e;
         };
@@ -153,7 +153,7 @@ psd_err filesystemPerform(psd_state *s, fsCallback_t callback) {
     return error;
 }
 
-psd_err callback_filesystemReset(char *, FILE *handle) {
+psd_err callback_filesystemReset(char*, char *value) {
     // We use tmpfile - the file is deleted automatically
     // when the file is closed.
     int code = fclose(handle);
@@ -163,7 +163,7 @@ psd_err callback_filesystemReset(char *, FILE *handle) {
     return noError();
 }
 
-psd_err callback_filesystemCommit(char *path, FILE *from) {
+psd_err callback_filesystemCommit(char *path, char *from) {
     FILE *to = fopen(path, "w+");
     psd_err error = copyFile(from, to);
     int code = fclose(to);
@@ -265,6 +265,13 @@ psd_err startsWith(const char *str, const char *sequence, bool *result) {
     }
     *result = false;
     return noError();
+}
+
+psd_sqlParam mkSqlParam(double number, const char *string) {
+    psd_sqlParam p;
+    p.number = number;
+    p.string = string;
+    return p;
 }
 
 long fileSize(FILE *fp) {
@@ -448,9 +455,18 @@ psd_err psd_fn_scrape_xpath(psd_state *s, const char *url, const char *xpath, co
     return noError();
 }
 
-psd_err psd_fn_sql(psd_state *s, const char *sql, const psd_fn_params, psd_fn_out *out) {
-    assert(false);
-    return noError();
+psd_sqlparam psd_mkParam_double(double val) {
+    return mkSqlParam(val, NULL);
+}
+
+psd_sqlParam psd_mkParam_string(const char *val) {
+    return mkSqlParam(0, val);
+}
+
+psd_err psd_fn_sql(psd_state *s, const char *sql, const psd_sqlParam *params, psd_fn_out *out) {
+    psd_err error = noError();
+
+    return error;
 }
 
 psd_err psd_fn_validate(psd_state *s, const char *value, const char *regex, bool *validation) {
@@ -486,12 +502,12 @@ psd_err psd_init(psd_state *s) {
     s->errMsg.size = 512;
     s->errMsg.length = 0;
     s->errMsg.data = (char *) malloc(sizeof(char) * s->errMsg.size);
-    s->errMsg.data[0] = '\0'; // Null terminator
     if (s->errMsg.data == NULL) {
-        // I at least care a little bit about memleaks
         psd_hashmap_free(&s->filesystem);
         return mkError(PSD_LIB_ENOMEM, "Init error buffer");
     }
+    s->errMsg.data[0] = '\0'; // Null terminator
+
     return noError();
 }
 
@@ -515,6 +531,7 @@ void psd_globalCleanup() {
 // --- Memory ---
 
 void psd_free(psd_state *s) {
+    psd_reset(s);
     psd_hashmap_free(&s->filesystem);
     free(s->errMsg.data);
     s->errMsg.data = NULL;
@@ -572,37 +589,6 @@ int main(int argc, char **argv) {
     psd_free_out(&out);
     psd_free(&state);
     psd_globalCleanup();
-
-
-
-    /*
-    psd_init();
-
-    psd_hashmap map;
-    psd_hashmap_init(&map, 3);
-    psd_hashmap_free(&map);
-
-    buffer data;
-    // Should be null terminated
-    bool success = resourceGet("testFile.txt", &data);
-    if (success) {
-        printf("Got data:\n\"%s\"\n", data.data);
-    } else {
-        printf("Error getting resource (what happened!?)\n");
-    }
-
-    freeBuffer(&data);
-
-    // Should be null terminated
-    success = resourceGet("https://debuginfod.archlinux.org/", &data);
-    if (success) {
-        printf("Got data:\n\"%s\"\n", data.data);
-    } else {
-        printf("Error getting web resource (what happened!?)\n");
-    }
-
-    psd_cleanup();
-    */
 
     return 0;
 }

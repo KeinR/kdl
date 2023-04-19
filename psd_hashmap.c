@@ -127,22 +127,26 @@ psd_hashmap_searchResult psd_hashmap_search(psd_hashmap *m, const char *key) {
     return result;
 }
 
-size_t psd_hashmap_get(const psd_hashmap *m, psd_hashmap_searchResult search, void *data, size_t count) {
+void psd_hashmap_get(const psd_hashmap *m, psd_hashmap_searchResult search, void **data, size_t *count) {
     psd_hashmap_data d = m->buckets[search.bucket].data[search.data];
-    size_t writeLen = stmin(count, d.valueLen);
-    memcpy(data, d.value, writeLen);
-    return writeLen;
+    if (count != NULL) {
+        *count = d.valueLen;
+    }
+    *data = d.value;
 }
 
-size_t psd_hashmap_getKey(const psd_hashmap *m, psd_hashmap_searchResult search, char *data, size_t count) {
+void psd_hashmap_getKey(const psd_hashmap *m, psd_hashmap_searchResult search, char **data, size_t *count) {
     psd_hashmap_data d = m->buckets[search.bucket].data[search.data];
-    size_t writeLen = stmin(count, d.keyLen);
-    memcpy(data, d.key, writeLen);
-    return writeLen;
+    if (count != NULL) {
+        *count = d.keyLen;
+    }
+    *data = d.key;
 }
 
 void psd_hashmap_remove(psd_hashmap *m, psd_hashmap_searchResult search) {
     psd_hashmap_bucket *b = m->buckets + search.bucket;
+    free(b->data[search.data].key);
+    free(b->data[search.data].value);
     b->data[search.data] = b->data[b->length - 1];
     b->length--;
     m->nElements--;
@@ -150,9 +154,13 @@ void psd_hashmap_remove(psd_hashmap *m, psd_hashmap_searchResult search) {
 
 void psd_hashmap_clear(psd_hashmap *m) {
     for (size_t b = 0; b < m->nBuckets; b++) {
+        for (size_t d = 0; d < m->buckets[b].length; d++) {
+            free(m->buckets[b].data[d].key);
+            free(m->buckets[b].data[d].value);
+        }
         m->buckets[b].length = 0;
     }
-    // Yeah that was pretty easy
+    m->nElements = 0;
 }
 
 // --- Iteration ---
