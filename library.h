@@ -23,6 +23,10 @@
 #define PSD_LIB_EBUFFER 4
 // Network error
 #define PSD_LIB_ENET 5
+// Regex compilation
+#define PSD_LIB_ERCMP 6
+// Regex execution
+#define PSD_LIB_EREXE 7
 
 // --- Structures ---
 
@@ -32,7 +36,7 @@ typedef struct {
 } psd_err;
 
 typedef struct {
-    const char **values;
+    const char *const *values;
     size_t length;
 } psd_fn_params;
 
@@ -47,15 +51,20 @@ typedef struct {
 } psd_fn_out;
 
 typedef struct {
-    char *buf;
-    int size;
-    FILE *handle;
-} psd_msgBuf;
+    char *data;
+    size_t size;
+    size_t length;
+} psd_errMsgBuf;
 
 typedef struct {
     // Maps files to temporary file handles
     psd_hashmap filesystem;
+    psd_errMsgBuf errMsg;
 } psd_state;
+
+// --- Error handling ---
+
+bool psd_isError(psd_err e);
 
 // --- Library functions ---
 
@@ -73,13 +82,14 @@ psd_err psd_commit(psd_state *s);
 
 // --- Initialization ---
 
-void psd_init(psd_state *s);
-bool psd_globalInit();
+psd_err psd_init(psd_state *s);
+psd_err psd_globalInit();
 void psd_globalCleanup();
 
 // --- Memory ---
 
 void psd_free(psd_state *s);
 void psd_free_out(psd_fn_out *out);
+void psd_free_error(psd_err *e);
 
 #endif

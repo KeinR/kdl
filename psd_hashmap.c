@@ -22,7 +22,7 @@ int stringMD5(const char *str) {
     uint8_t digest[16];
 
     MD5Init(&c);
-    MD5Update(&c, str, length);
+    MD5Update(&c, (const unsigned char *)str, length);
     MD5Final(digest, &c);
 
     return *((unsigned int*)digest);
@@ -78,7 +78,7 @@ size_t psd_hashmap_size(const psd_hashmap *m) {
 int psd_hashmap_insert(psd_hashmap *m, const char *key, const void *value, size_t valueLen) {
     const int iKey = getIndex(m, key);
     psd_hashmap_bucket *b = m->buckets + iKey;
-    const int newLength = b->length + 1;
+    const size_t newLength = b->length + 1;
     if (newLength > b->size) {
         const int newSize = b->size + BUCKET_SIZE_STEP;
         psd_hashmap_data *data = (psd_hashmap_data *) realloc(b->data, sizeof(psd_hashmap_data) * newSize);
