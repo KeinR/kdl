@@ -11,7 +11,6 @@
 // --- Static helper methods ---
 
 static int stringMD5(const char *str);
-static size_t stmin(size_t a, size_t b);
 static int stringLength(const char *str);
 static int getIndex(const psd_hashmap *m, const char *key);
 static int findIndex(psd_hashmap *m, const char *key, size_t *bucket, size_t *data);
@@ -26,10 +25,6 @@ int stringMD5(const char *str) {
     MD5Final(digest, &c);
 
     return *((unsigned int*)digest);
-}
-
-size_t stmin(size_t a, size_t b) {
-    return a > b ? a : b;
 }
 
 int stringLength(const char *str) {
