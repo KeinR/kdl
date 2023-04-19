@@ -458,7 +458,7 @@ psd_err psd_fn_validate(psd_state *s, const char *value, const char *regex, bool
     if (error.code == PSD_LIB_ERMATCH) {
         *validation = false;
         error = noError();
-    } else {
+    } else if (!psd_isError(error)) {
         *validation = true;
     }
     return error;
@@ -561,6 +561,13 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < out.length; i++) {
         printf("Match %li: '%s'\n", i, out.list[i].data);
     }
+
+    bool validation = false;
+    psd_err verr = psd_fn_validate(&state, "42342.232", "^[[:digit:]]+\\.[[:digit:]]+$", &validation);
+    if (psd_isError(verr)) {
+        printf("VAlidation error'd out\n");
+    }
+    printf("Validation: %s\n", validation ? "true" : " false");
 
     psd_free_out(&out);
     psd_free(&state);
