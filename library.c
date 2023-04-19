@@ -529,7 +529,7 @@ int main(int argc, char **argv) {
     psd_fn_out out;
     out.list = NULL;
     out.length = 0;
-    psd_err e = psd_fn_scrape_regex(&state, false, "https://debuginfod.archlinux.org/", params, "^.*([a-z]{1,3}).*$", &out);
+    psd_err e = psd_fn_scrape_regex(&state, false, "https://debuginfod.archlinux.org/", params, "https://([^/]+?)", &out);
 
     printf("results: %li\n", out.length);
     printf("error: %s\n", e.message);
@@ -540,15 +540,9 @@ int main(int argc, char **argv) {
         printf("No error\n");
     }
 
-
-
-    regmatch_t *matches = NULL;
-    int count = -1;
-    psd_err error = regexMatch("foobar test", "(t[a-z])", &matches, &count, &state.errMsg);
-    printf("results: %li\n", out.length);
-    printf("error: %s\n", error.message);
-    printf("detail: %s\n", state.errMsg.data);
-
+    for (size_t i = 0; i < out.length; i++) {
+        printf("Match %li: '%s'\n", i, out.list[i].data);
+    }
 
     psd_free_out(&out);
     psd_free(&state);
