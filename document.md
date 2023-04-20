@@ -1,92 +1,247 @@
 
-Practical Web Scraping and Data Reporting Language
-(or something to that effect)
 
 
-Use case:
-- Keeping and updating data records that must synchronize with publicly 
-accessible website data.
-
-Examples:
-- Keeping track of what anime you have watched
-- Comparing you and your friend's steam libraries for commonalities
-- Regularly scraping a webpage for chapters of a particular fanfic that takes 
-too long to update (*cough cough* To The Stars) and performing some operation on 
-the extracted text (creating a PDF, pretty formatting it in a text file, etc.)
-- Archiving web content, to some extent
-
-Notes:
-- For safety and simplicity, will never run JavaScript
-
-I dare say a library would be better for this but whatever.
-
-Syntax:
-
-```
-
-|| -> read/write
->> -> read
-<< -> write
-
-web <web page> ? param_1 ; param_2 ; regex ; ( [<regex>] | <<selector>> ) >> $x
-sql <sqlite_file> ? str [SELECT * FROM ? WHERE shoes=false] ; "foobar" >> $x
-x ? "SELECT shoes FROM foobar" >> y
-
-sql <sqlite_file> || $z
-z ? ...
-
-
-
-none 42352 >> $p
-
-get https://myanimelist.net/anime/*/ ? p ; sel [div.di-ib:nth-child(6) > span:nth-child(2)] >> x
-
-# FAil checks the failure of the last command
-fail [Request failed: ?] ? x
-val x ? [^\d{1,4}$] ; [Error: anime failed to validate: ? ] $p; 
-
-*sql mydatabase.sql ? [INSERT INTO anime VALUES (?, ?)] ; $p ; $x ; 
-
-make array ? 4235 ; 442 ; [I like cake] >> %array
-
-math [$x + 5] >> $sss
-
-begin ifname iterate [$x = $y and %array:2 ]
- 
-end ifname
-
-...
-
-Later...
-
-...
-
-
-
-# The default proc called when none is specified on the command line
-proc @main
-
-# $0 is first argument, $1 is second, etc...
-
-*sql mydatabase.sql ? [UPDATE anime SET watched =  WHERE id=?] ; $p >> $result
-fail [Database query failed]
-out [Update success]
-
-endproc @main
 
 
 ```
 
+assembly point: 41,543.
+bad place: 50, 500.
 
-Funcitons that have afteraffects must be prefixed by an asterisk.
+akatsuki, taihou, hibiki, akagi:
+do assemble at assembly point
 
-Otherwise, they will not be perminent.
+akatsuki:
+do overthrottle.
+do passive radar.
+do join patrol 6, link up if enemy spotted.
+do assemble at HQ if location is bad place or 
 
-There are two temporary sections: the volatile and the temp.
-Volatile is the place where stuff without afteraffects goes.
-Temp is where stuff with afteraffects goes.
-Temp is flushed to the real filesystem after the program ends execution with no errors.
+akatsuki, taihou, hibiki:
+do form fleet patrol 6.
 
-Program terminates on any errors
+patrol 6: engage on sight
+
+patrol 6, akagi: practice radio silence
+
+akagi:
+Report via aircraft
+
+akagi:
+if enemy detected then retreat, 
+
+
+packet akagi's instructions [
+    > assembly point
+    ! launch planes
+    ! patrol with planes
+    ! 
+]
+
+akatsuki:
+>> assembly point
+&>> do radio akagi 
+|>>
+
+enemy radio > decrypt * 
+
+-
+
+```
+
+- Reporting (radio, aircraft reports)
+- Scouting
+- Fleet creation
+- Movement
+- Attacking
+- Defending (ie, strategies) / retreating
+- Conditionals/statuses
+    - Health
+        - of individual componenets
+        - Fleet overall
+    - Enemy fleet composition
+    - Current number of planes in the air
+        - Scouting
+        - Attacking
+        - Patroling
+        - Screening
+    - Current orders
+        - Screen
+        - Patrol
+            - Radius
+        - Sumbmerge (submarine)
+        - Attack on sight (any number of enemies)
+        - Attack enemy
+        - Go to location
+            - Merge with fleet
+            - Dock in port
+        - Enemy focus
+        - Use/don't use main guns/torpedoes
+        - Resupply (at ports only)
+        - Bombarding area
+            - target factories
+            - target supply depots
+            - target fortifications
+    - Current action (not orders)
+        - Defending
+        - Taking on water
+    - Materiel
+        - Ammo
+            - Shells
+            - Torpedoes
+        - Fuel
+- Events
+    - Enemy spotted
+        - Submarine
+        - Surface fleet
+        - Count
+    - Land spotted
+        - Port spotted
+    - Ally spotted
+    - Low oxygen / oxygen at % (submarines)
+    - Port report
+        - Fortifications
+        - Supplies
+        - Controller
+
+
+Ports:
+- Can be controlled by fleets
+- Combat favors destroyers if ordered to storm, battleships and carriers if
+  ordered to bombard
+- The more a port is bombarded, the more its limited supplies are depleated.
+- Ports replenish some supplies every day, though their stockpile is what
+  matters
+- Islands can be bombarded, though you may not know where key resources are -
+  this is where intelligence comes into play.
+
+
+
+
+Three attributes:
+- Thigns about the ship
+- Things about what's around the ship
+- What the ship is doing
+
+
+
+
+```
+
+@order2 >> engage. go HQ.
+
+@order >>
+engage.
+go HQ.
+
+%akatsuki >>
+$armor: health = 80%                                    ? #akagi: go HQ & dock here.
+>enemy spotted: (enemies = 4, distance - 3 > 40); enemies = 5 ? engage.
+!moving: speed = high                                     ? do radar ~passively.
+
+```
+
+Special characters
+- $, (, ), %, >, !, ?, :, ;, @, =, <, >, -, +, *, /, 
+
+```
+S = PROGRAM
+PROGRAM = ST_LIST
+ST_LIST = ST_LIST ST
+ST = CTX_MK
+ST = CMD_LIST
+ST = COND_LIST
+CTX_MK = CTRLC LABEL :
+CTRLC = @
+CTRLC = $
+CTRLC = >
+CTRLC = !
+LABEL = ([a-zA-Z][a-zA-Z0-9_]+\n?)+
+CMD_LIST = CMD_LIST CMD
+CMD_LIST = CMD
+CMD = COM .
+
+
+
+
+
+-------
+
+
+S* = PROGRAM
+PROGRAM = STUFF
+STUFF = THING STUFF
+STUFF = THING
+THING = FULL_CMD
+THING = TOP_LABEL
+
+
+FULL_CMD = COND_LIST ? CMD_LIST
+FULL_CMD = CMD_LIST
+COND_LIST = LABEL COND_LIST
+// , = and, ; = or
+COND_LIST = COND , COND_LIST
+COND_LIST = COND ; COND_LIST
+COND_LIST = COND
+
+COND = ( COND )
+COND = VALUE = VALUE
+COND = VALUE != VALUE
+COND = VALUE < VALUE
+COND = VALUE > VALUE
+COND = VALUE <= VALUE
+COND = VALUE >= VALUE
+VALUE = ( VALUE )
+VALUE = VALUE + VALUE
+VALUE = VALUE - VALUE
+VALUE = VALUE / VALUE
+VALUE = VALUE * VALUE
+VALUE = LITERAL
+VALUE = VARIABLE
+// So that we can break out of the context temporarially
+VARIABLE = LABEL NAME
+VARIABLE = NAME
+LITERAL = NUMBER
+LITERAL = STRING
+NUMBER = \d+(\.\d*)?
+STRING = " WORDS "
+STRING = RAW_WORDS
+WORDS = [literally anything lol]
+RAW_WORDS = RAW_WORD RAW_WORDS
+RAW_WORD = [a-zA-Z_]+
+
+LABEL = ID NAME :
+TOP_LABEL = ID2 NAME >>
+ID = #
+ID = !
+ID = >
+ID = $
+ID2 = @
+ID2 = #
+NAME = ([a-zA-Z][a-zA-Z0-9_]+[ ]?)+
+
+CMD_LIST = TIMELINE . CMD_LIST
+CMD_LIST = TIMELINE .
+
+TIMELINE = ORDER_PRE & TIMELINE
+TIMELINE = ORDER_PRE | TIMELINE
+TIMELINE = ORDER_PRE
+
+ORDER_PRE = LABEL ORDER
+ORDER_PRE = ORDER
+
+ORDER = VERB
+ORDER = VERB NOUN
+ORDER = VERB NOUN ADJECTIVE
+
+VERB = RAW_WORD
+NOUN = RAW_WORDS
+ADJECTIVE = ~ RAW_WORD
+
+
+```
+
+
+
 
 

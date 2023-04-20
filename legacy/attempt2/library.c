@@ -45,7 +45,6 @@ static psd_err dataAppend(char **data, size_t *length, size_t *size, size_t buff
 static psd_err formatString(const char *template, psd_fn_params params, buffer *out);
 // WARNING: Continues despite errors
 static psd_err filesystemPerform(psd_state *s, fsCallback_t callback);
-static psd_err callback_filesystemReset(char *key, const char *value);
 static psd_err callback_filesystemCommit(char *key, const char *value);
 // Returns error: PSD_LIB_EOK, PSD_LIB_EIO
 static psd_err copyFile(FILE *src, FILE *dest);
@@ -64,6 +63,7 @@ static buffer mkBuffer();
 static void freeBuffer(buffer *buf);
 static psd_err mkError(int code, const char *message);
 static psd_err noError();
+static void getTmpName(char *name);
 
 // --- Static helper functions ---
 
@@ -153,22 +153,21 @@ psd_err filesystemPerform(psd_state *s, fsCallback_t callback) {
     return error;
 }
 
-psd_err callback_filesystemReset(char*, char *value) {
-    // We use tmpfile - the file is deleted automatically
-    // when the file is closed.
-    int code = fclose(handle);
-    if (code == EOF) {
-        return mkError(PSD_LIB_EIO, "Close file");
+
+psd_err callback_filesystemClean(char *toPath, char *fromPath) {
+    if (remove(fromPath)) {
+        return mkError(PSD_LIB_EIO, "Remove file");
     }
     return noError();
 }
 
-psd_err callback_filesystemCommit(char *path, char *from) {
-    FILE *to = fopen(path, "w+");
+psd_err callback_filesystemCommit(char *toPath, char *fromPath) {
+    FILE *to = fopen(toPath, "w+");
+    FILE *from = fopen(fromPath, "r");
     psd_err error = copyFile(from, to);
-    int code = fclose(to);
-    free(path);
-    if (!psd_isError(error) && code == EOF) {
+    int code0 = fclose(to);
+    int code1 = fclose(to);
+    if (!psd_isError(error) && (code0 == EOF || code1 == EOF)) {
         error = mkError(PSD_LIB_EIO, "Close file");
     }
     return error;
@@ -395,6 +394,36 @@ psd_err noError() {
     return mkError(PSD_LIB_EOK, "");
 }
 
+psd_err getTmpName(char *name) {
+    size_t len = strlen(name);
+    char *mod = (char *) malloc(sizeof(char) * len);
+    int number = 0;
+    bool loop = true;
+    do {
+        memcpy(mod, name, sizeof(char) * (len + 1));
+        for (int i = 0, x = 1; i < len; i++) {
+            char c = name[i];
+            if (c == 'X') {
+                c += number / x;
+                x *= 10;
+            }
+        }
+        FILE *file = fopen(mod, "r");
+        if (file != NULL) {
+            fclose(file);
+            loop = false;
+        }
+        number++;
+        if (number > STRING_OVERRUN_MAX) {
+            free(mod);
+        }
+    } while (loop);
+    memcpy(name, mod, sizeof(char) * (len + 1));
+    clean
+    free(mod);
+    return noError();
+}
+
 // --- Error handling ---
 
 bool psd_isError(psd_err error) {
@@ -465,7 +494,6 @@ psd_sqlParam psd_mkParam_string(const char *val) {
 
 psd_err psd_fn_sql(psd_state *s, const char *sql, const psd_sqlParam *params, psd_fn_out *out) {
     psd_err error = noError();
-
     return error;
 }
 
@@ -482,8 +510,8 @@ psd_err psd_fn_validate(psd_state *s, const char *value, const char *regex, bool
 
 // --- Control ---
 
-psd_err psd_reset(psd_state *s) {
-    psd_err err = filesystemPerform(s, callback_filesystemReset);
+void psd_reset(psd_state *s) {
+    filesystemPerform(s, callback_filesystemClean);
     psd_hashmap_clear(&s->filesystem);
     return err;
 }
@@ -582,7 +610,7 @@ int main(int argc, char **argv) {
     bool validation = false;
     psd_err verr = psd_fn_validate(&state, "42342.232", "^[[:digit:]]+\\.[[:digit:]]+$", &validation);
     if (psd_isError(verr)) {
-        printf("VAlidation error'd out\n");
+        printf("Validation error'd out\n");
     }
     printf("Validation: %s\n", validation ? "true" : " false");
 
