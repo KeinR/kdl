@@ -41,13 +41,13 @@ RAW_WORDS = RAW_WORD RAW_WORDS
 RAW_WORD = [a-zA-Z_0-9]+
 
 LABEL = ID NAME :
-TOP_LABEL = ID2 NAME >>
+TOP_LABEL = ID NAME >>
 ID = >
 ID = #
 ID = !
 ID = $
-ID2 = @
-ID2 = #
+ID = @
+ID = #
 NAME = ([a-zA-Z][a-zA-Z0-9_]+[ ]?)+
 
 CMD_LIST = TIMELINE . CMD_LIST
