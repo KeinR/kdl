@@ -217,34 +217,6 @@ void getMark(kdl_tokenization_t *t, size_t *i, const char **mark) {
         *i = mi;
     }
 }
-/*
-
-kdl_value_t mkValue() {
-    kdl_value_t value;
-    value.type = KDL_T_NULL;
-    value.str = NULL;
-    value.number = 0;
-    value.integer = 0;
-}
-
-kdl_value_t kdl_opfn_and(const kdl_value_t *a, const kdl_value_t *b) {
-    if (a->type != KDL_T_BOOL || a-type != KDL_T_BOOL) {
-        // Error: invalid type
-    }
-    kdl_value_t result = mkValue();
-    result.type = KDL_T_BOOL;
-    result.value = a->integer && b->integer;
-}
-
-kdl_value_t kdl_opfn_or(const kdl_value_t *a, const kdl_value_t *b) {
-    if (a->type != KDL_T_BOOL || a-type != KDL_T_BOOL) {
-        // Error: invalid type
-    }
-    kdl_value_t result = mkValue();
-    result.type = KDL_T_BOOL;
-    result.value = a->integer || b->integer;
-}
-*/
 
 // Handles ',' and ';' - the top level
 void parseGet(kdl_tokenization_t *t, size_t *i, const char *context, kdl_get_t *get, char terminator) {
@@ -254,87 +226,6 @@ void parseGet(kdl_tokenization_t *t, size_t *i, const char *context, kdl_get_t *
 
     }
 }
-
-/*
-int crunch(int value, int sel) {
-    return (value & (1 << sel)) >> sel;
-}
-
-typedef struct {
-    size_t index;
-    bool negate;
-} logical_element_t;
-
-void expandLogic(depth_t *depthList, size_t length, int recorded, logical_element_t **elements, int *elementsLen) {
-    if (recorded > sizeof(unsigned long) - 1) {
-        // Error: expression is too long
-        assert(1 == 0);
-    }
-    unsigned long values = 0;
-    const int iterations = 1 << recorded;
-    int *stack = (int *) malloc(sizeof(int) * KDL_MAX_EXP_SIZE);
-    logical_element_t *result = (logical_element_t *) malloc(sizeof(logical_element_t) * iterations * recorded);
-    size_t resultLen = 0;
-    for (; values < iterations; values++) {
-        int si = 0;
-        int currentDepth = -1;
-        int vi = 0;
-        for (size_t i = 0; i < length; i++) {
-            if (depth.depth > currentDepth) {
-                stack[si++] = '(';
-            } else if (depth.depth < currentDepth) {
-                stack[si++] = ')';
-            }
-            depth_t depth = depthList[i];
-            if (depth.depth > currentDepth) {
-                currentDepth = depth.depth;
-                stack[si++] = crunch(values, vi++);
-            }
-            char op = '\0';
-            int pop = 2;
-            if (depth.depth < currentDepth) {
-                currentDepth = depth.depth;
-                op = stack[i-2];
-                pop = 3;
-            } else {
-                stack[si++] = crunch(values, vi++);
-                op = depth.op;
-            }
-
-            int value = 0;
-            if (op == ';') {
-                value = stack[i] || stack[i-1];
-            } else if (op == ',') {
-                value = stack[i] && stack[i-1];
-            } else {
-                assert(false);
-            }
-            si -= pop;
-            stack[si++] = value;
-        }
-        if (si != 1) {
-            // Error: invalid expression
-            return NULL;
-        }
-        assert(stack[si] == 1 || stack[si] == 0);
-        if (stack[si]) {
-            for (int vvi = 0; vvi < iterations; vvi++) {
-                logical_element_t e;
-                e.index = vvi;
-                e.negate = !crunch(values, vvi);
-                result[resultLen++] = e;
-            }
-        }
-    }
-
-    result = (logical_element_t *) realloc(sizeof(logical_element_t) * resultLen);
-
-    *elements = result;
-    *elementsLen = resultLen;
-
-    free(stack);
-}
-*/
 
 // depth map must be of size 256
 // Depth map is the precidences for each value.
