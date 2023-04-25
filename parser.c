@@ -15,6 +15,7 @@ typedef struct {
 } depth_t;
 
 static int getToken(const char *input, size_t *offset, size_t *legnth, int *type);
+static void infixToPostfix(depth_t *input, size_t inputLen, int *depthMap, char **out, size_t *outLength);
 
 psd_error_t getToken(const char *input, kdl_token_t *token) {
     size_t i = 0;
@@ -100,6 +101,70 @@ psd_error_t getToken(const char *input, kdl_token_t *token) {
     token->type = t;
     return kdl_noError();
 }
+
+void infixToPostfix(depth_t *input, size_t inputLen, int *depthMap, char **out, size_t *outLength) {
+
+    // TODO: Add as parameter
+    // Don't care too much though since we're still operating at linear time OH
+    // YEAHHH
+    int max = 0;
+    for (int i = 0; i < 256; i++) {
+        assert(depthMap[i] >= 0);
+        if (depthMap[i] > max) {
+            max = depthMap[i];
+        }
+    }
+
+    // Prevents precidence collisions
+    const int stride = max + 1;
+
+    depth_t *levels = (depth_t *) malloc(sizeof(depth_t) * ((inputLen - 1) / 2));
+    char *stack = (char *) malloc(sizeof(char *) * inputLen);
+    size_t levelsLen = 0;
+    size_t stackLen = 0;
+
+    assert(inputLen % 2 == 1);
+
+    int prevRealDepth = -1;
+    int prevOp = '\0';
+    for (size_t i = 0; i < inputLen; i += 2) {
+        int depth = input[i].depth;
+        int nextOp = '\0';
+        int nextDepth = -1;
+        if (i + 1 < inputLen) {
+            nextOp = input[i+1].op;
+            nextDepth = input[i+1].depth;
+        }
+        int nextRealDepth = depthMap[nextOp] + nextDepth * stride;
+
+        stack[stackLen++] = input[i].op;
+
+        while (levelsLen > 0 && nextRealDepth < levels[levelsLen - 1].depth) {
+            depth_t l = levels[levelsLen - 1];
+            stack[stackLen++] = l.op;
+            levelsLen--;
+        }
+
+        depth_t l;
+        l.op = nextOp;
+        l.depth = nextRealDepth;
+        levels[levelsLen++] = l;
+
+        prevRealDepth = nextRealDepth;
+        prevOp = nextOp;
+
+        assert(levelsLen <= (inputLen - 1) / 2);
+    }
+
+    free(levels);
+
+    assert(stackLen == inputLen);
+
+    *out = stack;
+    *outLength = stackLen;
+}
+
+
 
 kdl_error_t kdl_tokenize(const char *input, kdl_tokenization_t *out) {
     size_t size = TOKEN_BUFER_SIZE;
