@@ -128,16 +128,59 @@ Three attributes:
 
 ```
 
-@order2 >> engage. go HQ.
+<condition> ? <orders> .
 
-@order >>
-engage.
-go HQ.
+referencing higher contexts:
+^ health:
+^^^ health:
+Inside parenthesies:
+(health: )
+(^^health: )
 
-%akatsuki >>
-$armor: health = 80%                                    ? #akagi: go HQ & dock here.
->enemy spotted: (enemies = 4, distance - 3 > 40); enemies = 5 ? engage.
-!moving: speed = high                                     ? do radar ~passively.
+To delcare variables:
+on use: <name> ? write <value>.
+
+To declare functions:
+on call: <name> ? inject & <instructions>.
+
+Value literal:
+word
+(word word word)
+(x: 4, y: 9)
+
+----
+
+(push: order ? inject ::
+    (? engage)
+    (? go HQ)
+    (? activate _0)
+    (? activate _1))
+(pull: testing char ? write [radar])
+
+(akatsuki: (^armor: health = 80%) ? forget ::
+    (akagi:? go (root: HQ) ::
+        (? dock here))
+    (? wait 100 :: target 40 80))
+(akatsuki armor: 80% health = maintinence needed = & ? ::
+    (akagi:? go HQ ::
+        (? dock here))
+    (akatsuki:? wait 100 ::
+        (? goto 40 80)))
+(akatsuki: (^spotted enemies: (count = 4, distance - 3 > 40); count = 5) ? order radar [scanlines])
+(akatsuki moving speed = high ? ::
+    (akatsuki:? radar activate [do passively])
+    (akatsuki:? do {testing char})
+    (? (akatsuki: order)))
+(? akatsuki: radar passive)
+
+# Fib?
+(? fib 0 1 0)
+(push: fib & (^fib: _2 < 100) ? inject ::
+    (? fib _1 (_0 + _1) (_2 + 1)))
+(push: fib & (^fib: _2 == 100) ? inject ::
+    (? result _2))
+
+>> persist the context as the default, across the scope defiend by the parentiesies
 
 ```
 
