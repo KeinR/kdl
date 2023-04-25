@@ -1,84 +1,94 @@
 #include <stdlib.h>
 #include <assert.h>
-#include <sys/param.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 typedef struct {
-    int depth;
-    // NULL if data object
-    char op;
-} depth_t;
+    // The precidence change inflicted on child elements.
+    // If this is anything but zero, this element is excluded from
+    // the output, and `prec`'s side effects are nullified.
+    // Commonly, '(' would have this be 1, and ')' as -1
+    int precChange;
+    // The precidence. Higher means higher precidence. If this is <= 0, this is data.
+    // If this is greater than zero, it is an operator. That is to say, this is OPERATOR precidence.
+    int prec;
+    // User data associated with this element
+    void *data;
+} element_t;
 
-void infixToPostfix(depth_t *input, size_t inputLen, int *depthMap, char **out, size_t *outLength) {
+void infixToPostfix(element_t *input, size_t inputLen, int maxPrec, void ***out, size_t *outLength) {
 
-    int max = 0;
-    for (int i = 0; i < 256; i++) {
-        assert(depthMap[i] >= 0);
-        if (depthMap[i] > max) {
-            max = depthMap[i];
-        }
-    }
+    typedef struct {
+        int realPrec;
+        void *data;
+    } level_t;
 
     // Prevents precidence collisions
-    const int stride = max + 1;
+    const int precStride = maxPrec + 1;
 
-    depth_t *levels = (depth_t *) malloc(sizeof(depth_t) * ((inputLen - 1) / 2));
-    char *stack = (char *) malloc(sizeof(char *) * inputLen);
+    level_t *levels = (level_t *) malloc(sizeof(element_t) * ((inputLen - 1) / 2));
+    void  **stack = (void **) malloc(sizeof(void *) * inputLen);
     size_t levelsLen = 0;
     size_t stackLen = 0;
 
-    assert(inputLen % 2 == 1);
+    int currentPrec = 0;
+    for (size_t i = 0; i < inputLen; i++) {
+        element_t e = input[i];
+        assert(e.prec <= maxPrec);
+        if (e.precChange != 0) {
+            currentPrec += e.precChange * precStride;
+        } else if (e.prec > 0) {
+            int realPrec = e.prec + currentPrec;
 
-    int prevRealDepth = -1;
-    int prevOp = '\0';
-    for (size_t i = 0; i < inputLen; i += 2) {
-        int depth = input[i].depth;
-        int nextOp = '\0';
-        int nextDepth = -1;
-        if (i + 1 < inputLen) {
-            nextOp = input[i+1].op;
-            nextDepth = input[i+1].depth;
+            while (levelsLen > 0 && realPrec < levels[levelsLen - 1].realPrec) {
+                stack[stackLen++] = levels[levelsLen - 1].data;
+                levelsLen--;
+
+                assert(stackLen <= inputLen);
+            }
+
+            level_t l;
+            l.realPrec = realPrec;
+            l.data = e.data;
+            levels[levelsLen++] = l;
+
+            assert(levelsLen <= (inputLen - 1) / 2);
+        } else {
+            stack[stackLen++] = input[i].data;
+
+            assert(stackLen <= inputLen);
         }
-        int nextRealDepth = depthMap[nextOp] + nextDepth * stride;
+    }
 
-        stack[stackLen++] = input[i].op;
-
-        while (levelsLen > 0 && nextRealDepth < levels[levelsLen - 1].depth) {
-            depth_t l = levels[levelsLen - 1];
-            stack[stackLen++] = l.op;
-            levelsLen--;
-        }
-
-        depth_t l;
-        l.op = nextOp;
-        l.depth = nextRealDepth;
-        levels[levelsLen++] = l;
-
-        prevRealDepth = nextRealDepth;
-        prevOp = nextOp;
-
-        assert(levelsLen <= (inputLen - 1) / 2);
+    while (levelsLen > 0) {
+        stack[stackLen++] = levels[--levelsLen].data;
     }
 
     free(levels);
 
-    assert(stackLen == inputLen);
+    stack = realloc(stack, sizeof(void *) * stackLen);
 
     *out = stack;
     *outLength = stackLen;
 }
 
-void runTestCase(depth_t *input, size_t inputLen, int *map, const char *name, const char *expect) {
-    char *out = NULL;
+void runTestCase(element_t *input, size_t inputLen, const char *name, const char *expect) {
+    char **out = NULL;
     size_t len = 0;
-    infixToPostfix(input, inputLen, map, &out, &len);
+    int maxPrec = 0;
+    for (size_t i = 0; i < inputLen; i++) {
+        if (input[i].prec > maxPrec) {
+            maxPrec = input[i].prec;
+        }
+    }
+    infixToPostfix(input, inputLen, maxPrec, (void ***) &out, &len);
     size_t eLen = strlen(expect);
 
     char buffer[128] = {0};
     size_t nLen = 0;
     for (size_t i = 0; i < len; i++) {
-        buffer[nLen++] = out[i];
+        buffer[nLen++] = ((char *)out[i])[0];
         if (i + 1 < len) {
             buffer[nLen++] = ' ';
         }
@@ -94,72 +104,105 @@ void runTestCase(depth_t *input, size_t inputLen, int *map, const char *name, co
     printf("'%s'\n", buffer);
 }
 
+void runString(const char *value, const char *expect) {
+    int map[256] = {0};
+    map['-'] = 1;
+    map['+'] = 1;
+    map['*'] = 2;
+    map['/'] = 2;
+    map['^'] = 3;
+    map['='] = 4;
+    map['|'] = 5;
+    map['&'] = 6;
+    map['!'] = 7;
+
+    element_t buffer[128];
+    size_t bufferLen = 0;
+    for (size_t i = 0; value[i]; i++) {
+        char c = value[i];
+        if (c == ' ') {
+            continue;
+        }
+        element_t e;
+        e.precChange = 0;
+        e.prec = 0;
+        e.data = (void *) (value + i);
+        if (c == '(') {
+            e.precChange = 1;
+        } else if (c == ')') {
+            e.precChange = -1;
+        } else if (map[c]) {
+            e.prec = map[c];
+        }
+        buffer[bufferLen++] = e;
+    }
+
+    runTestCase(buffer, bufferLen, value, expect);
+}
+
 int main() {
-    int lmap[256];
-    memset(lmap, 0, sizeof(int) * 256);
-    lmap['&'] = 2;
-    lmap['|'] = 1;
-
-    // a & b | c
-    depth_t inputA[] = {
-        {0, 'a'},
-        {0, '&'},
-        {0, 'b'},
-        {0, '|'},
-        {0, 'c'}
-    };
-    runTestCase(inputA, sizeof(inputA) / sizeof(depth_t), lmap, "a & b | c", "a b & c |");
-
     // a & (b | c)
-    depth_t inputB[] = {
-        {0, 'a'},
-        {0, '&'},
-        {9, 'b'},
-        {9, '|'},
-        {9, 'c'}
+    element_t inputA[] = {
+        {0, 0, "a"},
+        {0, 2, "&"},
+        {1, 0, "("},
+        {0, 0, "b"},
+        {0, 1, "|"},
+        {0, 0, "c"},
+        {-1, 0, ")"}
     };
-    runTestCase(inputB, sizeof(inputB) / sizeof(depth_t), lmap, "a & (b | c)", "a b c | &");
+    runTestCase(inputA, sizeof(inputA) / sizeof(element_t), "a & (b | c)", "a b c | &");
+    runString("a & (b | c)", "a b c | &");
+    runString("a & b | ! c", "a b & c ! |");
+    runString("a & ! (b | ! c)", "a b c ! | ! &");
 
-    int amap[256];
-    memset(amap, 0, sizeof(int) * 256);
-    amap['+'] = 2;
-    amap['-'] = 2;
-    amap['/'] = 3;
-    amap['*'] = 3;
-    amap['^'] = 4;
-    amap['='] = 1;
+
+    /*
+
+    // a & b | ! c
+    element_t inputB[] = {
+        {0, 0, 'a'},
+        {0, 2, '&'},
+        {0, 0, 'b'},
+        {0, 1, '|'},
+        {0, 3, '!'},
+        {0, 0, 'c'}
+    };
+    runTestCase(inputB, sizeof(inputB) / sizeof(element_t), lmap, "a & (b | c)", "a b c | &");
 
     // (a + b) * (c - d)
-    depth_t inputC[] = {
-        {1, 'a'},
-        {1, '+'},
-        {1, 'b'},
-        {0, '*'},
-        {1, 'c'},
-        {1, '-'},
-        {1, 'd'}
+    element_t inputC[] = {
+        {1, 1, '('},
+        {0, 1, 'a'},
+        {0, 1, '+'},
+        {0, 1, 'b'},
+        {-1, 1, ')'},
+        {0, 0, '*'},
+        {0, 1, 'c'},
+        {0, 1, '-'},
+        {0, 1, 'd'}
     };
-    runTestCase(inputC, sizeof(inputC) / sizeof(depth_t), amap, "(a + b) * (c - d)", "a b + c d - *");
+    runTestCase(inputC, sizeof(inputC) / sizeof(element_t), amap, "(a + b) * (c - d)", "a b + c d - *");
 
     // (a + b) * (c - d) = 4 / 2
-    depth_t inputD[] = {
-        {1, 'a'},
-        {1, '+'},
-        {1, 'b'},
-        {0, '*'},
-        {1, 'c'},
-        {1, '-'},
-        {1, 'd'},
-        {0, '='},
-        {0, '4'},
-        {0, '/'},
-        {0, '2'},
+    element_t inputD[] = {
+        {0, 1, 'a'},
+        {0, 1, '+'},
+        {0, 1, 'b'},
+        {0, 0, '*'},
+        {0, 1, 'c'},
+        {0, 1, '-'},
+        {0, 1, 'd'},
+        {0, 0, '='},
+        {0, 0, '4'},
+        {0, 0, '/'},
+        {0, 0, '2'},
     };
-    runTestCase(inputD, sizeof(inputD) / sizeof(depth_t), amap, "(a + b) * (c - d) = 4 / 2", "a b + c d - * 4 2 / =");
+    runTestCase(inputD, sizeof(inputD) / sizeof(element_t), amap, "(a + b) * (c - d) = 4 / 2", "a b + c d - * 4 2 / =");
 
 
     // a + m * x / b - q
-    depth_t inputE[] = {
+    element_t inputE[] = {
         {0, 'a'},
         {0, '+'},
         {0, 'm'},
@@ -170,9 +213,8 @@ int main() {
         {0, '-'},
         {0, 'q'}
     };
-    runTestCase(inputE, sizeof(inputE) / sizeof(depth_t), amap, "a + m * x / b - q", "a m x b / * q - +");
-
-
+    runTestCase(inputE, sizeof(inputE) / sizeof(element_t), amap, "a + m * x / b - q", "a m x b / * q - +");
+    */
 
 
 
