@@ -106,12 +106,12 @@ void runTestCase(element_t *input, size_t inputLen, const char *name, const char
 
 void runString(const char *value, const char *expect) {
     int map[256] = {0};
-    map['-'] = 1;
-    map['+'] = 1;
-    map['*'] = 2;
-    map['/'] = 2;
-    map['^'] = 3;
-    map['='] = 4;
+    map['-'] = 2;
+    map['+'] = 2;
+    map['*'] = 3;
+    map['/'] = 3;
+    map['^'] = 4;
+    map['='] = 1;
     map['|'] = 5;
     map['&'] = 6;
     map['!'] = 7;
@@ -155,6 +155,7 @@ int main() {
     runString("a & (b | c)", "a b c | &");
     runString("a & b | ! c", "a b & c ! |");
     runString("a & ! (b | ! c)", "a b c ! | ! &");
+    runString("(a + b) * (c - d) = 4 / 2", "a b + c d - * 4 2 / =");
 
 
     /*
