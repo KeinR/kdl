@@ -1,21 +1,94 @@
 #include "tokenizer.h"
 
 #include <stdlib.h>
+#include <string.h>
+
+#define MAX_STRING_LEN 1028
 
 #define TOKEN_BUFFER_SIZE 512
-
 #define KDL_MAX_EXP_SIZE 512
+#define MAX_CONTEXT_DEPTH 512
+#define CONTEXT_BUFFER_SIZE MAX_STRING_LEN
+
+#define MAX_PREC 20
 
 // TODO: Handle OOM errors
+// TODO: Use isspace instead of checking for whitespace ourselves
 
 typedef struct {
-    int depth;
-    // NULL if data object
-    char op;
-} depth_t;
+    // The precidence change inflicted on child elements.
+    // If this is anything but zero, this element is excluded from
+    // the output, and `prec`'s side effects are nullified.
+    // Commonly, '(' would have this be 1, and ')' as -1
+    int precChange;
+    // The precidence. Higher means higher precidence. If this is <= 0, this is data.
+    // If this is greater than zero, it is an operator. That is to say, this is OPERATOR precidence.
+    int prec;
+    // User data associated with this element
+    void *data;
+} element_t;
 
-static int getToken(const char *input, size_t *offset, size_t *legnth, int *type);
-static void infixToPostfix(depth_t *input, size_t inputLen, int *depthMap, char **out, size_t *outLength);
+typedef struct {
+    char *context;
+    size_t contextLen;
+    size_t *indices;
+    size_t indicesLen;
+} contextTracker_t;
+
+// Return is null terminated
+void getContextString(contextTracker_t tracker, char **out) {
+    *out = (char *) malloc(sizeof(char) * (tracker.contextLen + 1));
+    memcpy(*out, tracker.context, sizeof(char) * tracker.contextLen);
+    (*out)[tracker.contextLen] = '\0';
+}
+
+bool tokenEqChar2NT(kdl_token_t t, char c) {
+    return t.valueLen == 2 && token.value[1] == c;
+}
+
+bool tokenEqCharNT(kdl_token_t t, char c) {
+    return t.valueLen == 1 && token.value[0] == c;
+}
+
+bool tokenEqChar(kdl_token_t t, char c, int type) {
+    return t.type == type && t.valueLen == 1 && t.value[0] == c;
+}
+
+void addToContext(contextTracker_t *tracker, const char *word, size_t wordLen) {
+    if (tracker->indicesLen + 1 > CONTEXT_BUFFER_SIZE) {
+        // Error: buffer size exceeded
+    }
+    if (tracker->contextLen + wordLen + 1 > CONTEXT_BUFFER_SIZE) {
+        // Error: buffer size exceeded
+    }
+    tracker->content[tracker->contextLen] = ' ';
+    memcpy(tracker->context + tracker->contextLen + 1, word, wordLen);
+    tracker->indices[tracker->indicesLen++] = tracker->contextLen;
+    tracker->contextLen += wordLen + 1;
+}
+
+void mkContext(contextTracker_t *out) {
+    out->context = (char *) malloc(sizeof(char) * CONTEXT_BUFFER_SIZE);
+    out->indices = (size_t *) malloc(sizeof(size_t) * CONTEXT_BUFFER_SIZE);
+    out->contextLen = 0;
+    out->indicesLen = 0;
+}
+
+void freeContext(contextTracker *tracker) {
+    free(out->context);
+    free(out->indices);
+    out->context = NULL;
+    out->indices = NULL;
+    out->contextLen = 0;
+    out->indicesLen = 0;
+}
+
+void getContext(contextTracker_t base, int levels, contextTracker_t *out) {
+    mkContext(out);
+    if (levels < base.indicesLen) {
+        addContext(out, base.context, levels > 0 ? base.indices[base.indicesLen - levels] : base.contextLen);
+    }
+}
 
 psd_error_t getToken(const char *input, kdl_token_t *token) {
     size_t i = 0;
@@ -77,21 +150,44 @@ psd_error_t getToken(const char *input, kdl_token_t *token) {
     case '!':
         len = 1;
         break;
+    case '[':
+        t =  KDL_TK_STR;
+        i++;
+        for (; input[i+l] != ']'; l++) {
+            if (!input[i+l]) {
+                // Error: Unexpected EOF while reading string
+                return kdl_mkError(KDL_ERR_FAIL);
+            }
+        }
+        l--;
+        break;
+    case '{':
+        t =  KDL_TK_VAR;
+        i++;
+        for (; input[i+l] != '}'; l++) {
+            if (!input[i+l]) {
+                // Error: Unexpected EOF while reading string
+                return kdl_mkError(KDL_ERR_FAIL);
+            }
+        }
+        l--;
+        break;
     default:
         if (c >= '0' && c <= '9') {
-            t = KDL_TK_NUMBER;
+            t = KDL_TK_INT;
             for (; input[i+l] >= '0' && input[i+l] <= '9'; l++);
             if (input[i] == '.') {
+                t = KDL_TK_FLOAT;
                 for (; input[i+l] >= '0' && input[i+l] <= '9'; l++);
             }
             if (input[i] == '%') {
+                t = KDL_TK_PERC;
                 l++;
             }
         } else {
             t = KDL_TK_WORD;
             for (;  (input[i+l] >= 'a' && input[i+l] <= 'a') ||
                     (input[i+l] >= 'A' && input[i+l] <= 'Z') ||
-                    (input[i+l] >= '0' && input[i+l] <= '9') ||
                     input[i+l] == '_'
                     ; l++);
         }
@@ -102,63 +198,77 @@ psd_error_t getToken(const char *input, kdl_token_t *token) {
     return kdl_noError();
 }
 
-void infixToPostfix(depth_t *input, size_t inputLen, int *depthMap, char **out, size_t *outLength) {
-
-    // TODO: Add as parameter
-    // Don't care too much though since we're still operating at linear time OH
-    // YEAHHH
-    int max = 0;
-    for (int i = 0; i < 256; i++) {
-        assert(depthMap[i] >= 0);
-        if (depthMap[i] > max) {
-            max = depthMap[i];
+void createStringCopyNoWhitespace(const char *input, size_t length, char **out) {
+    char *result = (char *) malloc(sizeof(char) * (length + 1));
+    size_t resultLen = 0;
+    for (size_t i = 0; i < length; i++) {
+        // Very lazy but very fast
+        if (input[i] > 0x20) {
+            result[resultLen++] = input[i];
+        } else if (resultLen > 0 && result[resultLen - 1] > 0x20) {
+            // Admitidly this also means we admit funny characters.
+            // This also means that we admit funny characters.
+            result[resultLen++] = ' ';
         }
     }
+    result[resultLen] = '\0';
+    result = (char *) realloc(sizeof(char) * (resultLen + 1));
+
+    *out = result;
+}
+
+
+void infixToPostfix(element_t *input, size_t inputLen, int maxPrec, void ***out, size_t *outLength) {
+
+    typedef struct {
+        int realPrec;
+        void *data;
+    } level_t;
 
     // Prevents precidence collisions
-    const int stride = max + 1;
+    const int precStride = maxPrec + 1;
 
-    depth_t *levels = (depth_t *) malloc(sizeof(depth_t) * ((inputLen - 1) / 2));
-    char *stack = (char *) malloc(sizeof(char *) * inputLen);
+    level_t *levels = (level_t *) malloc(sizeof(element_t) * ((inputLen - 1) / 2));
+    void  **stack = (void **) malloc(sizeof(void *) * inputLen);
     size_t levelsLen = 0;
     size_t stackLen = 0;
 
-    assert(inputLen % 2 == 1);
+    int currentPrec = 0;
+    for (size_t i = 0; i < inputLen; i++) {
+        element_t e = input[i];
+        assert(e.prec <= maxPrec);
+        if (e.precChange != 0) {
+            currentPrec += e.precChange * precStride;
+        } else if (e.prec > 0) {
+            int realPrec = e.prec + currentPrec;
 
-    int prevRealDepth = -1;
-    int prevOp = '\0';
-    for (size_t i = 0; i < inputLen; i += 2) {
-        int depth = input[i].depth;
-        int nextOp = '\0';
-        int nextDepth = -1;
-        if (i + 1 < inputLen) {
-            nextOp = input[i+1].op;
-            nextDepth = input[i+1].depth;
+            while (levelsLen > 0 && realPrec < levels[levelsLen - 1].realPrec) {
+                stack[stackLen++] = levels[levelsLen - 1].data;
+                levelsLen--;
+
+                assert(stackLen <= inputLen);
+            }
+
+            level_t l;
+            l.realPrec = realPrec;
+            l.data = e.data;
+            levels[levelsLen++] = l;
+
+            assert(levelsLen <= (inputLen - 1) / 2);
+        } else {
+            stack[stackLen++] = input[i].data;
+
+            assert(stackLen <= inputLen);
         }
-        int nextRealDepth = depthMap[nextOp] + nextDepth * stride;
+    }
 
-        stack[stackLen++] = input[i].op;
-
-        while (levelsLen > 0 && nextRealDepth < levels[levelsLen - 1].depth) {
-            depth_t l = levels[levelsLen - 1];
-            stack[stackLen++] = l.op;
-            levelsLen--;
-        }
-
-        depth_t l;
-        l.op = nextOp;
-        l.depth = nextRealDepth;
-        levels[levelsLen++] = l;
-
-        prevRealDepth = nextRealDepth;
-        prevOp = nextOp;
-
-        assert(levelsLen <= (inputLen - 1) / 2);
+    while (levelsLen > 0) {
+        stack[stackLen++] = levels[--levelsLen].data;
     }
 
     free(levels);
 
-    assert(stackLen == inputLen);
+    stack = realloc(stack, sizeof(void *) * stackLen);
 
     *out = stack;
     *outLength = stackLen;
@@ -167,13 +277,13 @@ void infixToPostfix(depth_t *input, size_t inputLen, int *depthMap, char **out, 
 
 
 kdl_error_t kdl_tokenize(const char *input, kdl_tokenization_t *out) {
-    size_t size = TOKEN_BUFER_SIZE;
+    size_t size = TOKEN_BUFFER_SIZE;
     kdl_tokenization_t result;
     result.nTokens = 0;
     result.tokens = (kdl_token_t *) malloc(sizeof(kdl_token_t) * size);
     bool looping = true;
-    size_t offset = 0;
     kdl_token_t token;
+    const char *offset = NULL;
     while (!kdl_isError(getToken(input + offset, &token))) {
         if (result.nTokens + 1 > size) {
             size += TOKEN_BUFFER_SIZE;
@@ -181,7 +291,7 @@ kdl_error_t kdl_tokenize(const char *input, kdl_tokenization_t *out) {
         }
         result.tokens[result.nTokens] = token;
         result.nTokens++;
-        offset += wordOfs + wordLen;
+        offset = token.value + token.valueLen;
     }
 
     result.tokens = (kdl_token_t *) realloc(result.tokens, sizeof(kdl_token_t) * result.nTokens);
@@ -206,37 +316,25 @@ void append(void **dest, size_t *length, size_t *size, void *source, size_t byte
     (*length)++;
 }
 
-void truncate(void **data, size_t length, size_t bytes) {
-    *data = realloc(bytes * length);
-}
-
-void getString(kdl_tokenization_t *t, size_t begin, char **out) {
-    // TODO: Handle OOM errors
-    size_t length = 0;
-    size_t nStrings = 0;
-    for (size_t i = begin; i < t->nTokens && t->tokens[i].type == KDL_TK_WORD; i++) {
-        length += t->tokens[i].valueLen + 1; // Add one for the space
-        nStrings++;
-    }
-    if (length > 0) {
-        *out = (char *) malloc(sizeof(char) * (length + 1));
-        size_t ofs = 0;
-        for (size_t i = 0; i < nStrings; i++) {
-            size_t len = t->tokens[i].valueLen;
-            memcpy(*out + ofs, t->tokens[i].value, sizeof(char) * len);
-            (*out)[ofs + len] = ' ';
-            ofs += len + 1;
+void getString(kdl_tokenization_t *t, size_t *i, char **out) {
+    char *result = (char *) malloc(sizeof(char) * MAX_STRING_LEN);
+    size_t resultLen = 0;
+    size_t f = *i;
+    for (; f < t->nTokens && t->tokens[f].type == KDL_TK_WORD; i++) {
+        size_t len = t->tokens[f].valueLen;
+        if (len + 1 > MAX_STRING_LEN) {
+            // Error: max string length exceeded
+            assert(false);
         }
-        (*out)[length] = '\0';
-        *i += nStrings;
-        assert(*out != NULL); // TODO: handle OOM
-    } else {
-        *out = NULL;
+        memcpy(result + resultLen, t->tokens[f].value, sizeof(char) * len);
+        result[resultlen + len] = ' ';
+        resultLen += len + 1;
     }
-}
-
-bool endGet(kdl_tokenization_t *t, size_t i, char terminator) {
-    return t->tokens[i].value[0] == terminator;
+    result[resultLen] = '\0';
+    if (resultLen > 0) {
+        *out = result;
+        *i += f;
+    }
 }
 
 bool endInput(kdl_tokenization_t *t, size_t i) {
@@ -292,150 +390,223 @@ void parseGet(kdl_tokenization_t *t, size_t *i, const char *context, kdl_get_t *
     }
 }
 
-// depth map must be of size 256
-// Depth map is the precidences for each value.
-// For the input, all operators are on odd indices,
-// and values on even indices.
-// Values can have anything for `op`
-kdl_error_t kdl_infixToPostfix(depth_t *input, size_t inputLen, int *depthMap, char *out, size_t *outLength) {
-    if (inputLen == 1) {
-        // Don't waste my time
-        return;
-    }
+kdl_error_t kdl_getGet(contextTracker_t parent, kdl_tokenization_t *t, size_t *i, kdl_get_t *get, char terminate, char climber, char digger) {
+    kdl_op_t **ops = (kdl_op_t **) malloc(sizeof(kdl_op_t) * KDL_MAX_GET_LEN);
+    size_t opsLen = 0;
+    contextTracker_t *contexts = (contextTracker_t *) malloc(sizeof(contextTracker_t) * MAX_CONTEXT_DEPTH);
+    contexts[0] = parent;
+    size_t contextsLen = 1;
+    element_t *elements = (element_t *) malloc(sizeof(element_t) * KDL_MAX_GET_LEN);
+    size_t elementsLen = 0;
 
-    int max = 0;
-    for (int i = 0; i < 256; i++) {
-        if (depthMap[i] > max) {
-            max = depthMap[i];
+    int dug = 0;
+    for (; *i < t->nTokens && (t->tokens[*i].value[0] != terminate || dug > 0); (*i)++) {
+        if (opsLen >= KDL_MAX_GET_LEN) {
+            // Error: GET max length exceeded
         }
-    }
+        token_t token = t->tokens[*i];
+        if (token.value[0] == digger) {
+            dug++;
+        }
+        if (token.value[0] == climber) {
+            dug--;
+        }
+        if (token.value[0] == terminate && dug <= 0) {
+            // End of statement
+            break;
+        }
 
-    // Prevents precidence collisions
-    const int stride = max + 1;
+        char *tokenString = NULL;
+        createStringCopyNoWhitespace(token.value, token.valueLen, &tokenString);
+        void *value = NULL;
 
-    typedef struct {
-        int instances;
-        char op;
-        int depth;
-    } level_t;
-
-    level_t *levels = (level_t *) malloc(sizeof(level_t) * KDL_MAX_EXP_SIZE);
-    char *stack = (char *) malloc(sizeof(char *) * KDL_MAX_EXP_SIZE);
-    size_t levelslen = 0;
-    size_t stackLen = 0;
-
-    depth_t dummy;
-    dummy.depth = -1;
-    dummy.op = '\0';
-
-    assert(inputLen % 2 == 0);
-
-    for (size_t i = 0; i < inputLen; i += 2) {
-        int depth = input[i].depth;
-        // Pop from the last level if we are dealing with (((this))), and there
-        // are no operators of the same depth around us.
-        depth_t prev = i > 0 && input[i-1].depth == depth ? input[i-1] : (levelsLen > 0 ? levels[levelsLen - 1] : dummy);
-        depth_t next = i + 1 < inputLen && input[i+1] == depth ? input[i+1] : dummy;
-        int mod = MAX(MAX(depthMap[next.op], 0), MAX(depthMap[prev.op], 0)) + input[i].depth * stride;
-        int realDepth = mod + input[i].depth * stride;
-        if (levelsLen > 0 && realDepth > levels[levelsLen - 1]) {
-            level_t nl;
-            nl.instances = 1;
-            nl.depth = realDepth;
-            nl.op = depthMap[next.op] > depthMap[prev.op] ? next.op : prev.op;
-            levels[levelsLen++] = nl;
-        } else {
-            while (levelsLen > 0 && realDepth < levels[levelsLen - 1].depth) {
-                level_t l = levels[levelsLen - 1];
-                for (int i = 0; i < l.instances; i++) {
-                    stack[stackLen++] = l.op;
+        element_t e;
+        e.prec = 0;
+        e.precChange = 0;
+        e.data = NULL;
+        int op = KDL_OP_NOOP;
+        switch(token.type) {
+        case KDL_TK_CTRL:
+            if (token.valueLen == 1) {
+                switch(token.value[0]) {
+                case '+':
+                    op = KDL_OP_ADD;
+                    e.prec = 4;
+                    break;
+                case '-':
+                    op = KDL_OP_SUB;
+                    e.prec = 4;
+                    break;
+                case '/':
+                    op = KDL_OP_DIV;
+                    e.prec = 5;
+                    break;
+                case '*':
+                    op = KDL_OP_MUL;
+                    e.prec = 5;
+                    break;
+                case '=':
+                    op = KDL_OP_EQU;
+                    e.prec = 3;
+                    break;
+                case '<':
+                    op = KDL_OP_LTH;
+                    e.prec = 3;
+                case '>':
+                    op = KDL_OP_GTH;
+                    e.prec = 3;
+                case '&':
+                    op = KDL_OP_AND;
+                    e.prec = 2;
+                    break;
+                case '|':
+                    op = KDL_OP_OR;
+                    e.prec = 1;
+                    break;
+                case '!':
+                    op = KDL_OP_NOT;
+                    e.prec = 6;
+                    break;
+                case '(':
+                    e.precChange = 1;
+                    if (*i + 2 < t->nTokens &&
+                            (tokenEqChar(t->tokens[*i + 1], '^', KDL_TK_CTRL) ||
+                             (t->tokens[*i + 1].type == KDL_TK_WORD &&
+                              (t->tokens[*i + 2].type == KDL_TK_WORD ||
+                               (tokenEqChar(t->tokens[*i + 2], ':', KDL_TK_CTRL)))))) {
+                        size_t f = *i;
+                        int jumpers = 0;
+                        while (tokenEqChar(t->tokens[*i], '^', KDL_TK_CTRL)) {
+                            jumpers++;
+                            (*i)++;
+                            if (*i >= t->nTokens) {
+                                // Error: reached end of input while reading mark
+                                // jumpers
+                            }
+                        }
+                        contextTracker_t nc;
+                        if (jumpers == 0) {
+                            mkContext(&nc);
+                        } else {
+                            getContext(contexts[contextLen - 1], jumpers - 1, &nc);
+                        }
+                        while (t->tokens[*i].type == KDL_TK_WORD) {
+                            addToContext(&nc);
+                            (*i)++;
+                            if (*i >= t->nTokens) {
+                                // Error: reached end of input while reading mark
+                                // words
+                            }
+                        }
+                        if (!tokenEqChar(t->tokens[*i], ':', KDL_TK_CTRL)) {
+                            // Error: expected ':' at end of label
+                        }
+                        contexts[contextLen++] = nc;
+                    }
+                    break;
+                case ')':
+                    e.precChange = -1;
+                    if (contextsLen <= 1) {
+                        // Error: unexpected closing parenthsies
+                    }
+                    freeContext(&contexts[--contextsLen]);
+                    break;
+                default:
+                    assert(false);
                 }
-                levelsLen--;
+            } else if (token.valueLen == 2) {
+                if (token.value[0] == '<' && token.value[1] == '=') {
+                    op = KDL_OP_LEQ;
+                    e.prec = 3;
+                } else if (token.value[0] == '>' && token.value[1] == '=') {
+                    op = KDL_OP_GEQ;
+                    e.prec = 3;
+                } else {
+                    assert(false);
+                }
+            } else {
+                assert(false);
             }
+            break;
+        case KDL_TK_WORD:
+            // Variable, by process of elimination
+            assert(false);
+            break;
+        case KDL_TK_INT:
+            value = malloc(sizeof(kdl_int_t));
+            // TODO: Handle errors
+            *((kdl_int_t *)value) = (kdl_int_t) strtoll(tokenString, NULL, 10);
+            op = KDL_OP_PINT;
+            break;
+        case KDL_TK_FLOAT:
+            value = malloc(sizeof(kdl_float_t));
+            // TODO: Handle errors
+            *((kdl_float_t *) value) = (kdl_float_t) strtold(tokenString, NULL);
+            op = KDL_OP_PFLOAT;
+            break;
+        case KDL_TK_PERC:
+            value = malloc(sizeof(kdl_float_t));
+            // Docs say that strtold() doesn't care if there's junk at the end
+            // of the input.
+            // And I suppose that goes for our trailing %
+            *((kdl_float_t *) value) = (kdl_float_t) strold(tokenString, NULL);
+            op = KDL_OP_PPERC;
+            break;
+        case KDL_TK_VAR:
+            op = KDL_OP_PVAR;
+            break;
+        case KDL_TK_STR:
+            op = KDL_OP_PSTR;
+            break;
+        default:
+            assert(false);
         }
-        if (input[i].op != '\0') {
-            stack[stackLen++] = input[i].op;
+        if (op != KDL_OP_NOOP) {
+            kdl_op_t *opv = NULL;
+            opv = (kdl_op_t *) malloc(sizeof(kdl_op_t));
+            kdl_token_t token = t->tokens[*i];
+            if (value == NULL) {
+                value = tokenString;
+            }
+            opv->op = op;
+            opv->value = value;
+            getContextString(contexts[contextLen - 1], &opv->context);
+            e.data = opv;
+        } else {
+            free(tokenString);
         }
+        elements[elementsLen++] = e;
+        assert(prec <= MAX_PREC);
     }
 
-    free(levels);
+    kdl_op_t **stack = NULL;
+    size_t stackLen = 0;
+    infixToPostfix(elements, elementsLen, MAX_PREC, &stack, &stackLen);
 
-    *out = stack;
+    for (size_t f = 0; f < contextsLen; f++) {
+        freeContext(&contexts[f]);
+    }
+    free(contexts);
+    free(elements);
+    free(ops);
+
+    // Flatten the stack.
+    // Supposidly this improves CPU cache or smthn idk.
+    // Well I like flat arrays so...!!!!
+    compute_t compute;
+    compute.opers = (kdl_op_t *) malloc(sizeof(kdl_op_t) * stackLen);
+
+    for (size_t f = 0; f < stackLen; f++) {
+        compute.opers[f] = *(stack[f]);
+        free(stack[f]);
+    }
+
+    free(stack);
+
+    *get = result;
 }
 
-kdl_error_t kdl_getGet(kdl_tokenization_t *t, size_t *i, kdl_get_t *get) {
-    kdl_get_t *result = (kdl_logic_t *) malloc(sizeof(kdl_logic_t) * KDL_MAX_EXP_SIZE);
-
-    depth_t *d = (depth_t *) malloc(sizeof(depth_t) * KDL_MAX_EXP_SIZE);
-    // Was there a logical expression found on this level?
-    bool *records = (bool *) malloc(sizeof(bool) * KDL_MAX_EXP_SIZE);
-    size_t dLen = 0;
-    int depth = 0;
-    int recorded = 0;
-    bool justChangedDepth = false;
-    for (size_t f = *i; t->tokens[f].value[0] != '?'; f++) {
-        if (f >= t->nTokens) {
-            // Error: premature end of expression
-        }
-        char c = t->tokens[f].value[0];
-        switch (c) {
-        case '(':
-            depth++;
-            records[depth] = false;
-            break;
-        case ')':
-            if (records[depth]) {
-                depth_t dr;
-                dr.depth = depth;
-                dr.op = '\0';
-                d[dLen++] = dr;
-                recorded++;
-            }
-            depth--;
-            if (depth < 0) {
-                // Error: unmatched parenthesies
-            }
-            break;
-        case ';':
-        case ',':
-            records[depth] = true;
-            // Record whatever must have been before it
-            recorded++;
-            depth_t dr;
-            dr.depth = depth;
-            // Scoop the one before it
-            dr.op = '\0';
-            d[dLen++] = dr;
-            dr.op = c;
-            d[dLen++] = dr;
-            break;
-        }
-        if (f + 1 >= t->nTokens) {
-            // Error: premature end of statement, EOF hit
-        }
-    }
-    if (depth != 0) {
-        // Error: unexpected '?', parenthesies not closed
-    }
-    depth_t dr;
-    dr.depth = 0;
-    dr.op = '\0';
-    d[dLen++] dr;
-
-    logical_element_t *elements = NULL;
-    size_t elementsLen = 0;
-    expandLogic(d, dLen, recorded, &elements, &elementsLen);
-
-    free(d);
-    free(records);
-
-    // Parse GET
-    parseGet(t, &i, "", get, '?');
-
-    free(elements);
-    // Skip over '?'
-    (*i)++;
-    *get = result;
+kdl_error_t kdl_getSet(kdl_tokenization_t *t, size_t *i) {
 }
 
 kdl_error_t kdl_build(kdl_tokeniziation_t *t, size_t *i, size_t endToken, kdl_program_t *out) {
@@ -448,7 +619,7 @@ kdl_error_t kdl_build(kdl_tokeniziation_t *t, size_t *i, size_t endToken, kdl_pr
             // Error: expected ( at start of statement
         }
         kdl_rule_t rule;
-        kdl_getGet(t, i, &rule.get);
+        kdl_getGet(t, i, &rule.get, '?', '\0', '\0');
         kdl_getSet(t, i, &rule.set);
         append(&program.rules, &program.length, &programSize, &rule, sizeof(kdl_rule_t));
         if (t->tokens[*i].value[0] != ')') {
@@ -456,7 +627,8 @@ kdl_error_t kdl_build(kdl_tokeniziation_t *t, size_t *i, size_t endToken, kdl_pr
         }
     }
 
-    truncate(&program.rules, program.length, sizeof(kdl_rule_t));
+    program.rules = (kdl_rule_t *) realloc(program.rules, sizeof(kdl_rule_t) * program.length);
+
     *out = program;
     return kdl_noError();
 }

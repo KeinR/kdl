@@ -5,31 +5,46 @@
 
 #include <stddef.h>
 
-#define KDL_TK_CTRL 0
-#define KDL_TK_WORD 1
-#define KDL_TK_NUMBER 2
+#define KDL_TK_CTRL  0
+#define KDL_TK_WORD  1
+#define KDL_TK_INT   2
+#define KDL_TK_FLOAT 3
+#define KDL_TK_PERC  4
+#define KDL_TK_VAR   5
+#define KDL_TK_STR   6
 
-#define KDL_OP_INT   0
-#define KDL_OP_FLOAT 1
-#define KDL_OP_STR   2
-#define KDL_OP_VAR   3
-#define KDL_OP_ADD   4
-#define KDL_OP_SUB   5
-#define KDL_OP_DIV   6
-#define KDL_OP_MUL   7
-#define KDL_OP_EQU   8
+#define KDL_OP_NOOP   -1
+#define KDL_OP_PINT   0
+#define KDL_OP_PFLOAT 1
+#define KDL_OP_PSTR   2
+#define KDL_OP_PVAR   3
+#define KDL_OP_ADD    4
+#define KDL_OP_SUB    5
+#define KDL_OP_DIV    6
+#define KDL_OP_MUL    7
+#define KDL_OP_EQU    8
 // Less than or greater to, etc.
-#define KDL_OP_LEQ   9
-#define KDL_OP_GEQ   10
+#define KDL_OP_LEQ    9
+#define KDL_OP_GEQ    10
 // Less than, greater than
-#define KDL_OP_LTH   11
-#define KDL_OP_GTH   12
-#define KDL_OP_AND   13
-#define KDL_OP_OR    14
-#define KDL_OP_NOT   15
+#define KDL_OP_LTH    11
+#define KDL_OP_GTH    12
+#define KDL_OP_AND    13
+#define KDL_OP_OR     14
+#define KDL_OP_NOT    15
+#define KDL_OP_PPERC  16
+
+typedef kdl_int_t long long;
+typedef kdl_float_t long double;
 
 typedef struct {
     int type;
+    // Re-use pointer locations in the input string lol
+    // Hence the length property and the constant qualifier.
+    // Do not free.
+    // Not null terminated (probably).
+    // Primarially for error reporting.
+    // Secondairally for memory saving (lol)
     const char *value;
     size_t valueLen;
 } kdl_token_t;
