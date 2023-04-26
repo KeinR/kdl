@@ -1,9 +1,17 @@
 #ifndef KDL_TOKENIZER_H_INCLUDED
 #define KDL_TOKENIZER_H_INCLUDED
 
-#include "error.h"
-
 #include <stddef.h>
+
+#define KDL_ERR_OK  0
+// Expected a character to be somewhere
+#define KDL_ERR_EXP 1
+// Unexpected character
+#define KDL_ERR_UNX 2
+// Unexpected EOF
+#define KDL_ERR_EOF 3
+// Value unsupported
+#define KDL_ERR_VAL 4
 
 #define KDL_TK_CTRL  0
 #define KDL_TK_WORD  1
@@ -97,8 +105,23 @@ typedef struct {
     kdl_compute_t get;
 } kdl_rule_t;
 
-kdl_error_t kdl_tokenize(const char *input, kdl_tokenization_t *out);
-kdl_error_t kdl_build(kdl_tokenization_t tokens, kdl_program_t *out);
+typedef struct {
+    const char *data;
+    size_t dataLen;
+    bool hasDataLen;
+
+    int code;
+    const char *message;
+} kdl_error_t;
+
+typedef struct {
+    void(*malloc)(size_t);
+    void(*realloc)(void*,size_t);
+    void(*free)(void*);
+} kdl_state_t;
+
+kdl_error_t kdl_tokenize(kdl_state_t s, const char *input, kdl_tokenization_t *out);
+kdl_error_t kdl_build(kdl_state_t s, kdl_tokenization_t tokens, kdl_program_t *out);
 
 #endif
 
