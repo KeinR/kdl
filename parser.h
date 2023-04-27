@@ -12,6 +12,8 @@
 #define KDL_ERR_EOF 3
 // Value unsupported
 #define KDL_ERR_VAL 4
+// A static buffer size was exceeded
+#define KDL_ERR_BUF 5
 
 #define KDL_TK_CTRL  0
 #define KDL_TK_WORD  1
@@ -21,7 +23,7 @@
 #define KDL_TK_VAR   5
 #define KDL_TK_STR   6
 
-#define KDL_OP_NOOP   -1
+#define KDL_OP_NOOP  -1
 #define KDL_OP_PINT   0
 #define KDL_OP_PFLOAT 1
 #define KDL_OP_PSTR   2
@@ -120,8 +122,7 @@ typedef struct {
     void(*free)(void*);
 } kdl_state_t;
 
-kdl_error_t kdl_tokenize(kdl_state_t s, const char *input, kdl_tokenization_t *out);
-kdl_error_t kdl_build(kdl_state_t s, kdl_tokenization_t tokens, kdl_program_t *out);
+kdl_error_t kdl_parse(const char *input, kdl_program_t *program);
 
 #endif
 
