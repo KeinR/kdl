@@ -7,15 +7,13 @@ PST = ( ST )
 PST = ( MARK ST )
 PST = COMMENT
 COMMENT = #.*\n
-ST = GET ? SET
+ST = COMP ? EXEC
 
-GET = COND_LIST_TL
+COMP = COND_LIST
 // Empty conditional is always true
-GET = <empty>
+COMP = <empty>
 
 // So that the top level doesn't require parenthesies
-COND_LIST_TL = MARK COND_LIST
-COND_LIST_TL = COND_LIST
 // , = and, ; = or
 COND_LIST = ( COND_LIST ) , COND_LIST
 COND_LIST = ! ( COND_LIST ) , COND_LIST
@@ -28,7 +26,7 @@ COND_LIST = ! OP ; COND_LIST
 COND_LIST = OP
 COND_LIST = ! OP
 
-OP = ( MARK OP )
+OP = ( OP )
 OP = VALUE = VALUE
 OP = VALUE != VALUE
 OP = VALUE < VALUE
@@ -36,7 +34,6 @@ OP = VALUE > VALUE
 OP = VALUE <= VALUE
 OP = VALUE >= VALUE
 OP = VALUE
-VALUE = ( MARK VALUE )
 VALUE = ( VALUE )
 VALUE = VALUE + VALUE
 VALUE = VALUE - VALUE
@@ -57,19 +54,17 @@ WORD_LIST = WORD
 WORD = [_a-zA-Z_][_a-zA-Z_0-9]*
 
 MARK = JUMPER WORD_LIST :
+// This sets global context
 MARK = JUMPER :
 JUMPER = <empty>
 JUMPER = ^ JUMPER
 
-SET = ORDER :: AFTER
-SET = :: AFTER
-SET = ORDER
+EXEC = ORDER :: AFTER
+EXEC = :: AFTER
+EXEC = ORDER
 
-// You may not infintitely nest parentheies
-ORDER = ( MARK ORD )
-ORDER = ORD
-ORD = VERB
-ORD = VERB PARAM_LIST
+ORDER = VERB
+ORDER = VERB PARAM_LIST
 
 PARAM_LIST = PARAM PARAM_LIST
 PARAM_LIST = PARAM
