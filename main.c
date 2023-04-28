@@ -5,7 +5,7 @@
 #include "parser.h"
 
 int main(int argc, char **argv) {
-    const char *input = "(530 = 0 ? record [this])";
+    const char *input = "(530 = 0 ? (night: record [this]))";
     kdl_program_t program;
     kdl_error_t error = kdl_parse(input, &program);
     if (error.code != KDL_ERR_OK) {

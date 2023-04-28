@@ -910,11 +910,6 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
     contextTracker_t context = parentContext;
     contextTracker_t newContext;
 
-    TEST(getMark(s, context, 0, t, i, &newContext, &gotNewContext))
-    if (gotNewContext) {
-        context = newContext;
-    }
-
     if (token.type == KDL_TK_WORD) {
         getContextString(s, context, &result.order.context);
         result.order.verb = (char *) s.malloc(sizeof(char) * (token.valueLen + 1));
