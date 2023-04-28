@@ -568,7 +568,7 @@ void infixToPostfix(kdl_state_t s, element_t *input, size_t inputLen, int maxPre
     // Prevents precidence collisions
     const int precStride = maxPrec + 1;
 
-    level_t *levels = (level_t *) s.malloc(sizeof(element_t) * ((inputLen - 1) / 2));
+    level_t *levels = (level_t *) s.malloc(sizeof(element_t) * inputLen);
     void  **stack = (void **) s.malloc(sizeof(void *) * inputLen);
     size_t levelsLen = 0;
     size_t stackLen = 0;

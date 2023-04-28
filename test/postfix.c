@@ -27,7 +27,7 @@ void infixToPostfix(element_t *input, size_t inputLen, int maxPrec, void ***out,
     // Prevents precidence collisions
     const int precStride = maxPrec + 1;
 
-    level_t *levels = (level_t *) malloc(sizeof(element_t) * ((inputLen - 1) / 2));
+    level_t *levels = (level_t *) malloc(sizeof(element_t) * inputLen);
     void  **stack = (void **) malloc(sizeof(void *) * inputLen);
     size_t levelsLen = 0;
     size_t stackLen = 0;
