@@ -79,7 +79,7 @@ static void freeContext(kdl_state_t s, contextTracker_t *tracker);
 static kdl_error_t getContext(kdl_state_t s, kdl_token_t currentToken, int depth, contextTracker_t base, size_t levels, contextTracker_t *out);
 static bool isNumber(char c);
 static bool isCharOrUns(char c);
-static kdl_error_t getToken(const char *input, kdl_token_t *token, bool *eof);
+static kdl_error_t getToken(const char *input, kdl_token_t *token, size_t *skip, bool *eof);
 static void createStringCopyNoWhitespace(kdl_state_t s, const char *input, size_t length, char **out);
 static void infixToPostfix(kdl_state_t s, element_t *input, size_t inputLen, int maxPrec, void ***out, size_t *outLength);
 static kdl_error_t tokenize(kdl_state_t s, const char *input, kdl_tokenization_t *out);
@@ -413,18 +413,19 @@ bool isNumber(char c) {
 }
 
 bool isCharOrUns(char c) {
-    return (c >= 'a' && c <= 'a') ||
+    return (c >= 'a' && c <= 'z') ||
            (c >= 'A' && c <= 'Z') ||
            c == '_';
 }
 
 // `eof` is set to true if we reached EOF.
 // `input` must be null-terminated.
-kdl_error_t getToken(const char *input, kdl_token_t *out, bool *eof) {
+kdl_error_t getToken(const char *input, kdl_token_t *out, size_t *skip, bool *eof) {
     ERROR_START
 
     size_t i = 0;
     size_t l = 0;
+    size_t s = 0;
     int t = KDL_TK_CTRL;
     for (; input[i] && (isspace(input[i]) || input[i] == '#'); i++) {
         // Skip comments
@@ -443,6 +444,8 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, bool *eof) {
         *eof = true;
         NO_ERROR
     }
+
+    assert(c != ' ');
 
     switch (c) {
     case '>':
@@ -482,7 +485,7 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, bool *eof) {
                 NTERROR(KDL_ERR_UNX, "Expected something other than EOF while reading string literal", input)
             }
         }
-        l--;
+        s = 1;
         break;
     case '{':
         t = KDL_TK_VAR;
@@ -493,7 +496,7 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, bool *eof) {
                 NTERROR(KDL_ERR_UNX, "Expected something other than EOF while reading variable", input)
             }
         }
-        l--;
+        s = 1;
         break;
     default:
         // Does not support eg. '.4235'
@@ -513,6 +516,7 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, bool *eof) {
             t = KDL_TK_WORD;
             for (; isCharOrUns(input[i+l]); l++);
         } else {
+            printf("\n%i\n", (int) c);
             NTERROR(KDL_ERR_UNX, "Unrecognized character", input)
         }
     }
@@ -521,6 +525,7 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, bool *eof) {
     out->value = input + i;
     out->valueLen = l;
     out->type = t;
+    *skip = s;
 
     ERROR_IS
 
@@ -630,7 +635,8 @@ kdl_error_t tokenize(kdl_state_t s, const char *input, kdl_tokenization_t *out) 
     const char *offset = input;
     bool eof = false;
     while (true) {
-        TEST(getToken(offset, &token, &eof))
+        size_t skip = 0;
+        TEST(getToken(offset, &token, &skip, &eof))
         if (eof) {
             break;
         }
@@ -639,7 +645,7 @@ kdl_error_t tokenize(kdl_state_t s, const char *input, kdl_tokenization_t *out) 
             result.tokens = (kdl_token_t *) s.realloc(result.tokens, sizeof(kdl_token_t) * size);
         }
         result.tokens[result.nTokens++] = token;
-        offset = token.value + token.valueLen;
+        offset = token.value + token.valueLen + skip;
     }
 
     result.tokens = (kdl_token_t *) s.realloc(result.tokens, sizeof(kdl_token_t) * result.nTokens);
@@ -787,7 +793,9 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
             TEST(getRawValue(s, token, &value, &op, &global))
         }
         if (loop && op != KDL_OP_NOOP) {
-            assert(value != NULL);
+            if (value == NULL) {
+                createStringCopyNoWhitespace(s, token.value, token.valueLen, (char **) &value);
+            }
 
             kdl_op_t *opv = NULL;
             opv = (kdl_op_t *) malloc(sizeof(kdl_op_t));
@@ -821,6 +829,7 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
     }
 
     *out = compute;
+    (*i)++; // Go past our terminator
 
     ERROR_IS
 
@@ -851,10 +860,11 @@ kdl_error_t getValue(kdl_state_t s, contextTracker_t parentContext, kdl_tokeniza
     ERROR_START
 
     kdl_token_t token = t->tokens[*i];
+    kdl_compute_t result;
+    memset(&result, 0, sizeof(kdl_compute_t));
     if (token.type == KDL_TK_CTRL && !tokenEqChar(token, '(', KDL_TK_CTRL)) {
         ERROR(KDL_ERR_UNX, "Unexpected control character at beginning of supposed value expression", token)
     }
-    kdl_compute_t result;
     if (token.type == KDL_TK_CTRL) {
         // Thus, must be (, and so we can forward it...
         (*i)++;
@@ -871,6 +881,9 @@ kdl_error_t getValue(kdl_state_t s, contextTracker_t parentContext, kdl_tokeniza
             getContextString(s, parentContext, &op.context);
         }
         (*i)++;
+        result.length = 1;
+        result.opers = (kdl_op_t *) s.malloc(sizeof(kdl_op_t) * result.length);
+        result.opers[0] = op;
     }
 
     *out = result;
@@ -921,6 +934,7 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
             kdl_compute_t compute;
             TEST(getValue(s, context, t, i, &compute))
             result.order.params[result.order.nParams++] = compute;
+            lToken = t->tokens[*i];
         }
 
         result.order.params = (kdl_compute_t *) s.realloc(result.order.params, sizeof(kdl_compute_t) * result.order.nParams);
@@ -937,6 +951,8 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
 
     kdl_token_t token2 = t->tokens[*i];
 
+    assert(doExpression == tokenEqChar22(token2, ':', ':', KDL_TK_CTRL));
+    // So it's redundent
     if (doExpression || tokenEqChar22(token2, ':', ':', KDL_TK_CTRL)) {
         TEST(getProgram(s, context, t, i, &result.child, ')'))
     } else {
@@ -975,10 +991,9 @@ kdl_error_t getRule(kdl_state_t s, contextTracker_t context, kdl_tokenization_t 
     TEST(getCompute(s, context, t, i, &result.compute, '?'))
     TEST(getExecute(s, context, t, i, &result.execute))
 
-    if (!tokenEqChar(t->tokens[*i], ')', KDL_TK_CTRL)) {
-        ERROR(KDL_ERR_EXP, "Expected ')' at end of rule", t->tokens[*i])
-    }
-    (*i)++;
+    // Already checked for ')' by getExecute and children functions
+    // We are one past the last character of the rule, and ready to pass control
+    // to the parent
 
     *rule = result;
 
