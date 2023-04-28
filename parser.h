@@ -3,6 +3,12 @@
 
 #include <stddef.h>
 
+// TODO:
+// In getCompute()
+//      get precidence from map created from KDL_OP_* defs instead of hard
+//      coding it?
+//      Or add defs for it
+
 #define KDL_ERR_OK  0
 // Expected a character to be somewhere
 #define KDL_ERR_EXP 1
@@ -15,6 +21,11 @@
 // A static buffer size was exceeded
 #define KDL_ERR_BUF 5
 
+// KDL_TK_NULL trigger assertions if given to the wrong places.
+// So try not to use it.
+// Or be careful.
+// Or do neither.
+#define KDL_TK_NULL -1
 #define KDL_TK_CTRL  0
 #define KDL_TK_WORD  1
 #define KDL_TK_INT   2
@@ -66,7 +77,7 @@ typedef struct {
 
 typedef struct {
     // NULL if not needed (eg. this is a literal)
-    // Empty string if root context
+    // Empty string or NULL if root context
     char *context;
     // Of the type KDL_OP_*
     // The operation to perfrom on the stack
@@ -88,10 +99,12 @@ typedef struct {
 } kdl_program_t;
 
 typedef struct {
-    // Never NULL
     // Empty string if root
+    // Should be NULL if the verb is NULL
+    // (verb uses context, you see)
     char *context;
     // ie function to execute
+    // Is NULL if there is nothing todo
     char *verb;
     kdl_compute_t *params;
     size_t nParams;

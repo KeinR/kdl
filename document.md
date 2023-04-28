@@ -157,19 +157,19 @@ word
     (? activate _1))
 (pull: testing char ? write [radar])
 
-(akatsuki: (^armor: $health = 80%) ? forget ::
-    (akagi:? go (root: $HQ) ::
-        (? dock $here))
+(akatsuki armor: health = 80) ? forget ::
+    (akagi:? go (root: HQ) ::
+        (? dock here))
     (? wait 100 :: target 40 80))
-(akatsuki armor: 80% health = maintinence needed = & ? ::
-    (akagi:? go $HQ ::
-        (? dock $here))
+(akatsuki armor: health = 80; {>maintinence needed} ? ::
+    (akagi:? go HQ ::
+        (? dock here))
     (akatsuki:? wait 100 ::
         (? goto 40 80)))
-(akatsuki: (^spotted enemies: ($count = 4, $distance - 3 > 40); $count = 5) ? order radar [scanlines])
+(akatsuki spotted enemies: (count = 4, distance - 3 > 40); count = 5; {^^^ speed} >= 1 ? order radar [scanlines])
 (akatsuki moving speed = high ? ::
     (akatsuki:? radar activate [do passively])
-    (akatsuki:? do {testing char})
+    (akatsuki:? do {^position x})
     (? (akatsuki: order)))
 (? akatsuki: radar passive)
 
