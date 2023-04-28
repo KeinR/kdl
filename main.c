@@ -1,6 +1,8 @@
 #include <stdio.h>
 
-int main(int argc, char **argv) {
+#include "parser.c"
 
+int main(int argc, char **argv) {
+    printf("No segfaults!\n");
     return 0;
 }

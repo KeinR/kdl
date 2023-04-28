@@ -1,5 +1,5 @@
-#ifndef KDL_TOKENIZER_H_INCLUDED
-#define KDL_TOKENIZER_H_INCLUDED
+#ifndef KDL_PARSER_H_INCLUDED
+#define KDL_PARSER_H_INCLUDED
 
 #include <stddef.h>
 
