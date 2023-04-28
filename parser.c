@@ -2,8 +2,10 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <errorno.h>
+#include <errno.h>
 #include <stdio.h>
+#include <ctype.h>
+#include <assert.h>
 
 #define MAX_STRING_LEN 1028
 
@@ -12,6 +14,7 @@
 #define MAX_CONTEXT_DEPTH 512
 #define CONTEXT_BUFFER_SIZE MAX_STRING_LEN
 #define MAX_COMPUTE_PARAMS 512
+#define MAX_EXECUTE_PARAMS 512
 #define PROGRAM_BUFFER_SIZE 512
 
 #define MAX_PREC 20
@@ -54,14 +57,13 @@ typedef struct {
 static void *defMalloc(size_t n);
 static void *defRealloc(void *p, size_t n);
 static void defFree(void *p);
-static kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, void **outValue, int *outOp);
-static kdl_error_t getMark(kdl_state_t s, contextTracker context, int depth, kdl_tokenization_t *t, size_t *i, contextTracker_t *out, bool *got);
+static kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, void **outValue, int *outOp, bool *outGlobal);
+static kdl_error_t getMark(kdl_state_t s, contextTracker_t context, int depth, kdl_tokenization_t *t, size_t *i, contextTracker_t *out, bool *got);
 static kdl_error_t mkError(int code, const char *message, const char *pointer, size_t length, bool hasLength);
 static kdl_error_t noError();
 static bool isError(kdl_error_t error);
 static void getContextString(kdl_state_t s, contextTracker_t tracker, char **out);
-static bool tokenEqChar2NT(kdl_token_t t, char c);
-static bool tokenEqChar22(kdl_token_t t, char c, char c, int type);
+static bool tokenEqChar22(kdl_token_t t, char a, char b, int type);
 static bool tokenEqCharNT(kdl_token_t t, char c);
 static bool tokenEqChar(kdl_token_t t, char c, int type);
 static void freeTokenization(kdl_state_t s, kdl_tokenization_t *t);
@@ -71,11 +73,10 @@ static void freeProgram(kdl_state_t s, kdl_program_t *p);
 static void freeAction(kdl_state_t s, kdl_action_t *a);
 static void freeExecute(kdl_state_t s, kdl_execute_t *e);
 static void freeRule(kdl_state_t s, kdl_rule_t *e);
-static void freeVariable(kdl_state_t s, kdl_variable_t *v);
 static kdl_error_t addToContext(kdl_token_t currentToken, contextTracker_t *tracker, const char *word, size_t wordLen);
 static void mkContext(kdl_state_t s, int depth, contextTracker_t *out);
-static void freeContext(kdl_state_t s, contextTracker *tracker);
-static kdl_error_t getContext(kdl_state_t s, kdl_token_t currentToken, int depth, contextTracker_t base, int levels, contextTracker_t *out);
+static void freeContext(kdl_state_t s, contextTracker_t *tracker);
+static kdl_error_t getContext(kdl_state_t s, kdl_token_t currentToken, int depth, contextTracker_t base, size_t levels, contextTracker_t *out);
 static bool isNumber(char c);
 static bool isCharOrUns(char c);
 static kdl_error_t getToken(const char *input, kdl_token_t *token, bool *eof);
@@ -83,14 +84,14 @@ static void createStringCopyNoWhitespace(kdl_state_t s, const char *input, size_
 static void infixToPostfix(kdl_state_t s, element_t *input, size_t inputLen, int maxPrec, void ***out, size_t *outLength);
 static kdl_error_t tokenize(kdl_state_t s, const char *input, kdl_tokenization_t *out);
 static kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_t *t, size_t *i, kdl_compute_t *out, char terminate);
-static kdl_error_t getValue(kdl_state_t s, contextTracker parentContext, kdl_tokenization_t *t, size_t *i, kdl_compute_t *out);
-static kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokenization_t *t, size_t *i, kdl_kdl_execute_t *out);
-static kdl_error_t getRule(kdl_state_t s, contextTracker context, kdl_tokenization_t *t, size_t *i, kdl_rule_t *rule);
-static kdl_error_t getProgram(kdl_state_t s, contextTracker context, kdl_tokeniziation_t *t, size_t *i, kdl_program_t *out, char terminate);
+static kdl_error_t getValue(kdl_state_t s, contextTracker_t parentContext, kdl_tokenization_t *t, size_t *i, kdl_compute_t *out);
+static kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokenization_t *t, size_t *i, kdl_execute_t *out);
+static kdl_error_t getRule(kdl_state_t s, contextTracker_t context, kdl_tokenization_t *t, size_t *i, kdl_rule_t *rule);
+static kdl_error_t getProgram(kdl_state_t s, contextTracker_t context, kdl_tokenization_t *t, size_t *i, kdl_program_t *out, char terminate);
 
 // Default malloc
 void *defMalloc(size_t n) {
-    void *p = malloc(m);
+    void *p = malloc(n);
     if (p == NULL) {
         printf("Out of memory\n");
         exit(1);
@@ -105,6 +106,7 @@ void *defRealloc(void *p, size_t n) {
         printf("Out of memory\n");
         exit(1);
     }
+    return np;
 }
 
 // Default free
@@ -113,23 +115,25 @@ void defFree(void *p) {
 }
 
 // Parse value literal (consumes single token)
-kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, kdl_contextTracker_t context, void **outValue, int *outOp, bool *outGlobal) {
+kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, void **outValue, int *outOp, bool *outGlobal) {
     ERROR_START
 
     assert(token.type != KDL_TK_CTRL);
 
     int op = KDL_OP_NOOP;
     void *value = NULL;
+    char *string = NULL;
     bool global = false;
+    createStringCopyNoWhitespace(s, token.value, token.valueLen, (char **) &string);
     switch(token.type) {
     case KDL_TK_WORD:
-        // Variable, by process of elimination
+        // Variable, by process of elimination.
+        // locally scoped.
         op = KDL_OP_PVAR;
-        createStringCopyNoWhitespace(s, token.value, token.valueLen, (char **) &value);
         break;
     case KDL_TK_INT:
         value = s.malloc(sizeof(kdl_int_t));
-        *((kdl_int_t *)value) = (kdl_int_t) strtoll(tokenString, NULL, 10);
+        *((kdl_int_t *)value) = (kdl_int_t) strtoll(string, NULL, 10);
         if (errno == ERANGE) {
             ERROR(KDL_ERR_VAL, "Integer too large", token)
         }
@@ -137,7 +141,7 @@ kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, kdl_contextTracker_t c
         break;
     case KDL_TK_FLOAT:
         value = s.malloc(sizeof(kdl_float_t));
-        *((kdl_float_t *) value) = (kdl_float_t) strtold(tokenString, NULL);
+        *((kdl_float_t *) value) = (kdl_float_t) strtold(string, NULL);
         if (errno == ERANGE) {
             ERROR(KDL_ERR_VAL, "Floating point number too large", token)
         }
@@ -149,7 +153,7 @@ kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, kdl_contextTracker_t c
         // of the input.
         // And I suppose that goes for our trailing %
         // And of course, we know that the tokenizer has validated the input
-        *((kdl_float_t *) value) = (kdl_float_t) strold(tokenString, NULL);
+        *((kdl_float_t *) value) = (kdl_float_t) strtold(string, NULL);
         if (errno == ERANGE) {
             ERROR(KDL_ERR_VAL, "Percentage value too large", token)
         }
@@ -158,8 +162,8 @@ kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, kdl_contextTracker_t c
     case KDL_TK_VAR: {
         // The braces make it implicity global
         global = true;
-        int offset = 0;
-        int doOffset = 0;
+        size_t offset = 0;
+        size_t doOffset = 0;
         for (; isspace(token.value[offset]) && offset < token.valueLen; offset++);
         if (token.value[offset] == '>') {
             global = false;
@@ -170,7 +174,6 @@ kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, kdl_contextTracker_t c
         break;
     }
     case KDL_TK_STR:
-        createStringCopyNoWhitespace(s, token.value, token.valueLen, (char **) &value);
         op = KDL_OP_PSTR;
         break;
     default:
@@ -178,7 +181,11 @@ kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, kdl_contextTracker_t c
         assert(false);
     }
 
-    assert(value != NULL);
+    if (value == NULL) {
+        value = string;
+    } else {
+        s.free(string);
+    }
 
     *outValue = value;
     *outOp = op;
@@ -187,6 +194,7 @@ kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, kdl_contextTracker_t c
     ERROR_IS
 
     s.free(value);
+    s.free(string);
 
     ERROR_NONE
 
@@ -197,16 +205,16 @@ kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, kdl_contextTracker_t c
 // `got`: if the get was successful, and `i` was incremented
 // Format:
 // ^* <WORDS> :
-kdl_error_t getMark(kdl_state_t s, contextTracker context, int depth, kdl_tokenization_t *t, size_t *i, contextTracker_t *out, bool *got) {
+kdl_error_t getMark(kdl_state_t s, contextTracker_t context, int depth, kdl_tokenization_t *t, size_t *i, contextTracker_t *out, bool *got) {
     ERROR_START
 
     *got = false;
 
-    int f = *i;
+    size_t f = *i;
     contextTracker_t nc;
     memset(&nc, 0, sizeof(contextTracker_t));
 
-    int jumpers = 0;
+    size_t jumpers = 0;
     while (tokenEqChar(t->tokens[f], '^', KDL_TK_CTRL)) {
         jumpers++;
         f++;
@@ -219,12 +227,12 @@ kdl_error_t getMark(kdl_state_t s, contextTracker context, int depth, kdl_tokeni
     if (jumpers == 0) {
         mkContext(s, depth, &nc);
     } else {
-        TEST(getContext(s, depth, contexts[contextLen - 1], jumpers - 1, &nc))
+        TEST(getContext(s, t->tokens[f], depth, context, jumpers - 1, &nc))
     }
 
     while (t->tokens[f].type == KDL_TK_WORD) {
-        token_t token = t->tokens[f];
-        TEST(addToContext(&nc, token, token.value, token.valueLen))
+        kdl_token_t token = t->tokens[f];
+        TEST(addToContext(token, &nc, token.value, token.valueLen))
         f++;
         if (f >= t->nTokens) {
             ERROR(KDL_ERR_EOF, "Reached EOF while reading mark", t->tokens[f-1])
@@ -239,13 +247,13 @@ kdl_error_t getMark(kdl_state_t s, contextTracker context, int depth, kdl_tokeni
     } else if (jumpers > 0) {
         ERROR(KDL_ERR_EXP, "Expected ':' at end of mark", t->tokens[f])
     } else {
-        freeContext(&nc);
+        freeContext(s, &nc);
     }
 
 
     ERROR_IS
 
-    freeContext(&nc);
+    freeContext(s, &nc);
 
     ERROR_NONE
 
@@ -259,17 +267,11 @@ kdl_error_t mkError(int code, const char *message, const char *pointer, size_t l
     e.data = pointer;
     e.dataLen = length;
     e.hasDataLen = hasLength;
+    return e;
 }
 
 kdl_error_t noError() {
-    kdl_error_t e;
-    e.code = KDL_ERR_OK;
-    e.message = "No error";
-    // Will trigger assertions
-    e.token.type = KDL_TK_NULL;
-    e.token.value = NULL;
-    e.token.valueLen = 0;
-    return e;
+    return mkError(KDL_ERR_OK, "No error", NULL, 0, true);
 }
 
 bool isError(kdl_error_t error) {
@@ -283,16 +285,12 @@ void getContextString(kdl_state_t s, contextTracker_t tracker, char **out) {
     (*out)[tracker.contextLen] = '\0';
 }
 
-bool tokenEqChar2NT(kdl_token_t t, char c) {
-    return t.valueLen == 2 && token.value[1] == c;
-}
-
-bool tokenEqChar22(kdl_token_t t, char c, char c, int type) {
-    return t.valueLen == 2 && token.value[1] == c && token.type == type;
+bool tokenEqChar22(kdl_token_t t, char a, char b, int type) {
+    return t.valueLen == 2 && t.value[0] == a && t.value[1] == b && t.type == type;
 }
 
 bool tokenEqCharNT(kdl_token_t t, char c) {
-    return t.valueLen == 1 && token.value[0] == c;
+    return t.valueLen == 1 && t.value[0] == c;
 }
 
 bool tokenEqChar(kdl_token_t t, char c, int type) {
@@ -313,14 +311,14 @@ void freeOp(kdl_state_t s, kdl_op_t *o) {
 
 void freeCompute(kdl_state_t s, kdl_compute_t *c) {
     for (size_t i = 0; i < c->length; i++) {
-        freeOp(s, c->opers[i]);
+        freeOp(s, &c->opers[i]);
     }
     memset(c, 0, sizeof(kdl_compute_t));
 }
 
 void freeProgram(kdl_state_t s, kdl_program_t *p) {
     for (size_t i = 0; i < p->length; i++) {
-        freeRule(s, p->rules[i]);
+        freeRule(s, &p->rules[i]);
     }
     s.free(p->rules);
     memset(p, 0, sizeof(kdl_program_t));
@@ -330,7 +328,7 @@ void freeAction(kdl_state_t s, kdl_action_t *a) {
     s.free(a->context);
     s.free(a->verb);
     for (size_t i = 0; i < a->nParams; i++) {
-        freeCompute(s, a->params[i]);
+        freeCompute(s, &a->params[i]);
     }
     s.free(a->params);
     memset(a, 0, sizeof(kdl_action_t));
@@ -343,8 +341,8 @@ void freeExecute(kdl_state_t s, kdl_execute_t *e) {
 }
 
 void freeRule(kdl_state_t s, kdl_rule_t *e) {
-    freeExecute(s, &e->set);
-    freeCompute(s, &e->get);
+    freeExecute(s, &e->execute);
+    freeCompute(s, &e->compute);
     memset(e, 0, sizeof(kdl_rule_t));
 }
 
@@ -359,7 +357,7 @@ kdl_error_t addToContext(kdl_token_t currentToken, contextTracker_t *tracker, co
     if (tracker->contextLen + wordLen + 1 > CONTEXT_BUFFER_SIZE) {
         ERROR(KDL_ERR_BUF, "Context string buffer size exceeded", currentToken)
     }
-    tracker->content[tracker->contextLen++] = ' ';
+    tracker->context[tracker->contextLen++] = ' ';
     memcpy(tracker->context + tracker->contextLen, word, wordLen);
     tracker->indices[tracker->indicesLen++] = tracker->contextLen;
     tracker->contextLen += wordLen;
@@ -383,7 +381,7 @@ void mkContext(kdl_state_t s, int depth, contextTracker_t *out) {
 void freeContext(kdl_state_t s, contextTracker_t *out) {
     s.free(out->context);
     s.free(out->indices);
-    memset(out, 0, sizeof(contextTracker_t))
+    memset(out, 0, sizeof(contextTracker_t));
 }
 
 // Initialize context based off of a given context.
@@ -391,19 +389,19 @@ void freeContext(kdl_state_t s, contextTracker_t *out) {
 // Levels is the number of words (scopes, whatever) that should be discarded.
 // Note that surpassing the number of words with `levels` will result in a
 // fresh, blank context being returned
-kdl_error_t getContext(kdl_state_t s, kdl_token_t currentToken, int depth, contextTracker_t base, int levels, contextTracker_t *out) {
+kdl_error_t getContext(kdl_state_t s, kdl_token_t currentToken, int depth, contextTracker_t base, size_t levels, contextTracker_t *out) {
     ERROR_START
 
     contextTracker_t result;
     mkContext(s, depth, &result);
     if (levels < base.indicesLen) {
-        TEST(addToContext(&result, currentToken, base.context, levels > 0 ? base.indices[base.indicesLen - levels] : base.contextLen))
+        TEST(addToContext(currentToken, &result, base.context, levels > 0 ? base.indices[base.indicesLen - levels] : base.contextLen))
     }
     *out = result;
 
     ERROR_IS
 
-    freeContext(&result);
+    freeContext(s, &result);
 
     ERROR_NONE
 
@@ -443,7 +441,7 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, bool *eof) {
         seek = input[i+1];
     } else {
         *eof = true;
-        ERROR_LEAVE
+        NO_ERROR
     }
 
     switch (c) {
@@ -451,18 +449,18 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, bool *eof) {
     case '<':
     case '!':
         if (seek == '=') {
-            len = 2;
+            l = 2;
         } else {
-            len = 1;
+            l = 1;
         }
         break;
     case ':':
         if (seek == ':') {
-            len = 2;
+            l = 2;
         } else {
-            len = 1;
+            l = 1;
         }
-        break
+        break;
     case '/':
     case '*':
     case '-':
@@ -473,8 +471,7 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, bool *eof) {
     case '(':
     case ')':
     case '?':
-    case '!':
-        len = 1;
+        l = 1;
         break;
     case '[':
         t = KDL_TK_STR;
@@ -633,7 +630,7 @@ kdl_error_t tokenize(kdl_state_t s, const char *input, kdl_tokenization_t *out) 
     const char *offset = input;
     bool eof = false;
     while (true) {
-        TEST(getToken(s, offset, &token, &eof))
+        TEST(getToken(offset, &token, &eof))
         if (eof) {
             break;
         }
@@ -641,7 +638,7 @@ kdl_error_t tokenize(kdl_state_t s, const char *input, kdl_tokenization_t *out) 
             size += TOKEN_BUFFER_SIZE;
             result.tokens = (kdl_token_t *) s.realloc(result.tokens, sizeof(kdl_token_t) * size);
         }
-        result.tokens[result.nTokend++] = token;
+        result.tokens[result.nTokens++] = token;
         offset = token.value + token.valueLen;
     }
 
@@ -661,13 +658,9 @@ kdl_error_t tokenize(kdl_state_t s, const char *input, kdl_tokenization_t *out) 
 kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_t *t, size_t *i, kdl_compute_t *out, char terminate) {
     ERROR_START
 
-    // The list of operations, pointer'd to support infixToPostfix - flattened
-    // later
-    kdl_op_t **ops = (kdl_op_t **) s.malloc(sizeof(kdl_op_t *) * KDL_MAX_GET_LEN);
     contextTracker_t *contexts = (contextTracker_t *) s.malloc(sizeof(contextTracker_t) * MAX_CONTEXT_DEPTH);
-    element_t *elements = (element_t *) s.malloc(sizeof(element_t) * KDL_MAX_GET_LEN);
+    element_t *elements = (element_t *) s.malloc(sizeof(element_t) * KDL_MAX_EXP_SIZE);
     kdl_op_t **stack = NULL;
-    size_t opsLen = 0;
     size_t contextsLen = 0;
     size_t elementsLen = 0;
     size_t stackLen = 0;
@@ -682,9 +675,9 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
     bool loop = true;
 
     for (; loop && *i < t->nTokens; (*i)++) {
-        token_t token = t->tokens[*i];
-        if (opsLen >= KDL_MAX_GET_LEN) {
-            ERROR(KDL_ERR_BUF, "GET buffer size exceeded (operations)", token)
+        kdl_token_t token = t->tokens[*i];
+        if (elementsLen >= KDL_MAX_EXP_SIZE) {
+            ERROR(KDL_ERR_BUF, "Expression buffer size exceeded (elements/operations)", token)
         }
         if (tokenEqChar(token, terminate, KDL_TK_CTRL) && terminate != ')') {
             break;
@@ -729,14 +722,16 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
                 case '<':
                     op = KDL_OP_LTH;
                     e.prec = 3;
+                    break;
                 case '>':
                     op = KDL_OP_GTH;
                     e.prec = 3;
-                case '&':
+                    break;
+                case ',':
                     op = KDL_OP_AND;
                     e.prec = 2;
                     break;
-                case '|':
+                case ';':
                     op = KDL_OP_OR;
                     e.prec = 1;
                     break;
@@ -749,9 +744,9 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
                     e.precChange = 1;
                     bool got = false;
                     contextTracker_t nc;
-                    TEST(getMark(s, contexts[contextLen - 1], depth, t, i, &nc))
+                    TEST(getMark(s, contexts[contextsLen - 1], depth, t, i, &nc, &got))
                     if (got) {
-                        contexts[contextLen++] = depth;
+                        contexts[contextsLen++] = nc;
                     }
                     break;
                 }
@@ -768,7 +763,7 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
                         }
                     } else {
                         assert(contextsLen != 1);
-                        freeContext(&contexts[--contextsLen]);
+                        freeContext(s, &contexts[--contextsLen]);
                     }
                     break;
                 default:
@@ -796,13 +791,12 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
 
             kdl_op_t *opv = NULL;
             opv = (kdl_op_t *) malloc(sizeof(kdl_op_t));
-            kdl_token_t tk = t->tokens[*i];
             opv->op = op;
             opv->value = value;
             if (global) {
                 opv->context = NULL;
             } else {
-                getContextString(s, contexts[contextLen - 1], &opv->context);
+                getContextString(s, contexts[contextsLen - 1], &opv->context);
             }
             e.data = opv;
             elements[elementsLen++] = e;
@@ -810,15 +804,15 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
             s.free(value);
             value = NULL;
         }
-        assert(prec <= MAX_PREC);
+        assert(e.prec <= MAX_PREC);
     }
 
-    infixToPostfix(elements, elementsLen, MAX_PREC, &stack, &stackLen);
+    infixToPostfix(s, elements, elementsLen, MAX_PREC, (void ***) &stack, &stackLen);
 
     // Flatten the stack.
     // Supposidly this improves CPU cache or smthn idk.
     // Well I like flat arrays so...!!!!
-    compute_t compute;
+    kdl_compute_t compute;
     compute.opers = (kdl_op_t *) s.malloc(sizeof(kdl_op_t) * stackLen);
     compute.length = stackLen;
 
@@ -847,14 +841,13 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
 
     s.free(contexts);
     s.free(elements);
-    s.free(ops);
     s.free(stack);
 
     ERROR_END
 }
 
 // For the parameters to the verb
-kdl_error_t getValue(kdl_state_t s, contextTracker parentContext, kdl_tokenization_t *t, size_t *i, kdl_compute_t *out) {
+kdl_error_t getValue(kdl_state_t s, contextTracker_t parentContext, kdl_tokenization_t *t, size_t *i, kdl_compute_t *out) {
     ERROR_START
 
     kdl_token_t token = t->tokens[*i];
@@ -904,15 +897,15 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
     contextTracker_t context = parentContext;
     contextTracker_t newContext;
 
-    TEST(getMark(s, context, t, i, &newContext, &gotNewContext))
+    TEST(getMark(s, context, 0, t, i, &newContext, &gotNewContext))
     if (gotNewContext) {
         context = newContext;
     }
 
     if (token.type == KDL_TK_WORD) {
-        getContext(s, context, &result.context);
+        getContextString(s, context, &result.order.context);
         result.order.verb = (char *) s.malloc(sizeof(char) * (token.valueLen + 1));
-        memcpy(result.verb, token.value, token.valueLen);
+        memcpy(result.order.verb, token.value, token.valueLen);
         result.order.verb[token.valueLen] = '\0';
         // Now for the parameters
         result.order.params = (kdl_compute_t *) s.malloc(sizeof(kdl_compute_t) * MAX_COMPUTE_PARAMS);
@@ -922,7 +915,7 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
 
         kdl_token_t lToken = t->tokens[*i];
         while (lToken.type != KDL_TK_CTRL || tokenEqCharNT(lToken, '(')) {
-            if (result.nParams >= MAX_COMPUTE_PARAMS) {
+            if (result.order.nParams >= MAX_COMPUTE_PARAMS) {
                 ERROR(KDL_ERR_BUF, "Compute buffer size exceeded while parsing value", lToken)
             }
             kdl_compute_t compute;
@@ -930,11 +923,11 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
             result.order.params[result.order.nParams++] = compute;
         }
 
-        result.order.params = (kdl_compute_t *) s.realloc(sizeof(kdl_compute_t) * result.order.nParams);
+        result.order.params = (kdl_compute_t *) s.realloc(result.order.params, sizeof(kdl_compute_t) * result.order.nParams);
 
     } else if (tokenEqChar22(token, ':', ':', KDL_TK_CTRL)) {
         doExpression = true;
-        if (getNewContext) {
+        if (gotNewContext) {
             // We have a new mark, "(xxx: ...", and immediately go to rule list. What?
             ERROR(KDL_ERR_UNX, "Unexpected '::' while parsing execute", token)
         }
@@ -958,18 +951,18 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
 
     ERROR_IS
 
-    freeExecute(&result);
+    freeExecute(s, &result);
 
     ERROR_NONE
 
     if (gotNewContext) {
-        freeContext(&context);
+        freeContext(s, &context);
     }
 
     ERROR_END
 }
 
-kdl_error_t getRule(kdl_state_t s, contextTracker context, kdl_tokenization_t *t, size_t *i, kdl_rule_t *rule) {
+kdl_error_t getRule(kdl_state_t s, contextTracker_t context, kdl_tokenization_t *t, size_t *i, kdl_rule_t *rule) {
     ERROR_START
 
     kdl_rule_t result;
@@ -991,7 +984,7 @@ kdl_error_t getRule(kdl_state_t s, contextTracker context, kdl_tokenization_t *t
 
     ERROR_IS
 
-    freeRule(&result);
+    freeRule(s, &result);
 
     ERROR_NONE
 
@@ -1000,7 +993,7 @@ kdl_error_t getRule(kdl_state_t s, contextTracker context, kdl_tokenization_t *t
 
 
 
-kdl_error_t getProgram(kdl_state_t s, contextTracker context, kdl_tokeniziation_t *t, size_t *i, kdl_program_t *out, char terminate) {
+kdl_error_t getProgram(kdl_state_t s, contextTracker_t context, kdl_tokenization_t *t, size_t *i, kdl_program_t *out, char terminate) {
     ERROR_START
 
     assert(t->nTokens > 0);
@@ -1008,7 +1001,7 @@ kdl_error_t getProgram(kdl_state_t s, contextTracker context, kdl_tokeniziation_
     kdl_program_t result;
     memset(&result, 0, sizeof(kdl_program_t));
 
-    int programSize = PROGRAM_BUFFER_SIZE;
+    size_t programSize = PROGRAM_BUFFER_SIZE;
     result.rules = (kdl_rule_t *) s.malloc(sizeof(kdl_rule_t) * programSize);
     result.length = 0; // Formality, already done by memset
 
@@ -1039,7 +1032,7 @@ kdl_error_t getProgram(kdl_state_t s, contextTracker context, kdl_tokeniziation_
 
     ERROR_IS
 
-    freeProgram(&program);
+    freeProgram(s, &result);
 
     ERROR_NONE
 
@@ -1056,14 +1049,14 @@ kdl_error_t kdl_parse(const char *input, kdl_program_t *out) {
 
     kdl_tokenization_t tokens;
     kdl_program_t program;
-    kdl_contextTracker_t context;
+    contextTracker_t context;
 
     memset(&tokens, 0, sizeof(kdl_tokenization_t));
     mkContext(s, 0, &context);
 
     TEST(tokenize(s, input, &tokens))
     size_t i = 0;
-    TEST(getProgram(s, &tokens, &i, &program, '\0'))
+    TEST(getProgram(s, context, &tokens, &i, &program, '\0'))
 
     *out = program;
 
@@ -1071,7 +1064,7 @@ kdl_error_t kdl_parse(const char *input, kdl_program_t *out) {
 
     ERROR_NONE
 
-    freeTokenization(&tokens);
+    freeTokenization(s, &tokens);
 
     ERROR_END
 }

@@ -2,6 +2,7 @@
 #define KDL_PARSER_H_INCLUDED
 
 #include <stddef.h>
+#include <stdbool.h>
 
 // TODO:
 // In getCompute()
@@ -55,8 +56,8 @@
 #define KDL_OP_NOT    15
 #define KDL_OP_PPERC  16
 
-typedef kdl_int_t long long;
-typedef kdl_float_t long double;
+typedef long long kdl_int_t;
+typedef long double kdl_float_t;
 
 typedef struct {
     int type;
@@ -91,10 +92,10 @@ typedef struct {
     size_t length;
 } kdl_compute_t;
 
-typedef struct kdl_rule_t;
+struct kdl_rule_p;
 
 typedef struct {
-    kdl_rule_t *rules;
+    struct kdl_rule_p *rules;
     size_t length;
 } kdl_program_t;
 
@@ -115,9 +116,9 @@ typedef struct {
     kdl_action_t order;
 } kdl_execute_t;
 
-typedef struct {
-    kdl_execute_t set;
-    kdl_compute_t get;
+typedef struct kdl_rule_p {
+    kdl_compute_t compute;
+    kdl_execute_t execute;
 } kdl_rule_t;
 
 typedef struct {
@@ -130,8 +131,8 @@ typedef struct {
 } kdl_error_t;
 
 typedef struct {
-    void(*malloc)(size_t);
-    void(*realloc)(void*,size_t);
+    void*(*malloc)(size_t);
+    void*(*realloc)(void*,size_t);
     void(*free)(void*);
 } kdl_state_t;
 
