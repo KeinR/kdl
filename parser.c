@@ -69,7 +69,6 @@ static bool tokenEqChar(kdl_token_t t, char c, int type);
 static void freeTokenization(kdl_state_t s, kdl_tokenization_t *t);
 static void freeOp(kdl_state_t s, kdl_op_t *o);
 static void freeCompute(kdl_state_t s, kdl_compute_t *c);
-static void freeProgram(kdl_state_t s, kdl_program_t *p);
 static void freeAction(kdl_state_t s, kdl_action_t *a);
 static void freeExecute(kdl_state_t s, kdl_execute_t *e);
 static void freeRule(kdl_state_t s, kdl_rule_t *e);
@@ -167,7 +166,8 @@ kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, void **outValue, int *
         for (; isspace(token.value[offset]) && offset < token.valueLen; offset++);
         if (token.value[offset] == '>') {
             global = false;
-            doOffset = offset;
+            // Skip the >, we already have the information we need
+            doOffset = offset + 1;
         }
         createStringCopyNoWhitespace(s, token.value + doOffset, token.valueLen - doOffset, (char **) &value);
         op = KDL_OP_PVAR;
