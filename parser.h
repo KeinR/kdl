@@ -4,23 +4,16 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "def.h"
+
 // TODO:
 // In getCompute()
 //      get precidence from map created from KDL_OP_* defs instead of hard
 //      coding it?
 //      Or add defs for it
-
-#define KDL_ERR_OK  0
-// Expected a character to be somewhere
-#define KDL_ERR_EXP 1
-// Unexpected character
-#define KDL_ERR_UNX 2
-// Unexpected EOF
-#define KDL_ERR_EOF 3
-// Value unsupported
-#define KDL_ERR_VAL 4
-// A static buffer size was exceeded
-#define KDL_ERR_BUF 5
+// TODO:
+// Put input offset inside every struct for error handling at the execution
+// phase
 
 // KDL_TK_NULL trigger assertions if given to the wrong places.
 // So try not to use it.
@@ -55,9 +48,6 @@
 #define KDL_OP_OR     14
 #define KDL_OP_NOT    15
 #define KDL_OP_PPERC  16
-
-typedef long long kdl_int_t;
-typedef long double kdl_float_t;
 
 typedef struct {
     int type;
@@ -121,22 +111,8 @@ typedef struct kdl_rule_p {
     kdl_execute_t execute;
 } kdl_rule_t;
 
-typedef struct {
-    const char *data;
-    size_t dataLen;
-    bool hasDataLen;
-
-    int code;
-    const char *message;
-} kdl_error_t;
-
-typedef struct {
-    void*(*malloc)(size_t);
-    void*(*realloc)(void*,size_t);
-    void(*free)(void*);
-} kdl_state_t;
-
-kdl_error_t kdl_parse(const char *input, kdl_program_t *program);
+kdl_error_t kdl_parse(kdl_state_t s, const char *input, kdl_program_t *program);
+void kdl_freeProgram(kdl_state_t s, kdl_program_t *p);
 
 #endif
 

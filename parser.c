@@ -54,9 +54,6 @@ typedef struct {
     int depth;
 } contextTracker_t;
 
-static void *defMalloc(size_t n);
-static void *defRealloc(void *p, size_t n);
-static void defFree(void *p);
 static kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, void **outValue, int *outOp, bool *outGlobal);
 static kdl_error_t getMark(kdl_state_t s, contextTracker_t context, int depth, kdl_tokenization_t *t, size_t *i, contextTracker_t *out, bool *got);
 static kdl_error_t mkError(int code, const char *message, const char *pointer, size_t length, bool hasLength);
@@ -87,31 +84,6 @@ static kdl_error_t getValue(kdl_state_t s, contextTracker_t parentContext, kdl_t
 static kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokenization_t *t, size_t *i, kdl_execute_t *out);
 static kdl_error_t getRule(kdl_state_t s, contextTracker_t context, kdl_tokenization_t *t, size_t *i, kdl_rule_t *rule);
 static kdl_error_t getProgram(kdl_state_t s, contextTracker_t context, kdl_tokenization_t *t, size_t *i, kdl_program_t *out, char terminate);
-
-// Default malloc
-void *defMalloc(size_t n) {
-    void *p = malloc(n);
-    if (p == NULL) {
-        printf("Out of memory\n");
-        exit(1);
-    }
-    return p;
-}
-
-// Default realloc
-void *defRealloc(void *p, size_t n) {
-    void *np = realloc(p, n);
-    if (np == NULL) {
-        printf("Out of memory\n");
-        exit(1);
-    }
-    return np;
-}
-
-// Default free
-void defFree(void *p) {
-    free(p);
-}
 
 // Parse value literal (consumes single token)
 kdl_error_t getRawValue(kdl_state_t s, kdl_token_t token, void **outValue, int *outOp, bool *outGlobal) {
@@ -908,7 +880,6 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
     bool doExpression = false;
     bool gotNewContext = false;
     contextTracker_t context = parentContext;
-    contextTracker_t newContext;
 
     if (token.type == KDL_TK_WORD) {
         getContextString(s, context, &result.order.context);
@@ -1049,13 +1020,9 @@ kdl_error_t getProgram(kdl_state_t s, contextTracker_t context, kdl_tokenization
     ERROR_END
 }
 
-kdl_error_t kdl_parse(const char *input, kdl_program_t *out) {
+kdl_error_t kdl_parse(kdl_state_t s, const char *input, kdl_program_t *out) {
     ERROR_START
 
-    kdl_state_t s;
-    s.malloc = defMalloc;
-    s.realloc = defRealloc;
-    s.free = defFree;
 
     kdl_tokenization_t tokens;
     kdl_program_t program;
@@ -1077,4 +1044,8 @@ kdl_error_t kdl_parse(const char *input, kdl_program_t *out) {
     freeTokenization(s, &tokens);
 
     ERROR_END
+}
+
+void kdl_freeProgram(kdl_state_t s, kdl_program_t *p) {
+    freeProgram(s, p);
 }

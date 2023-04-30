@@ -1,4 +1,4 @@
 
 all:
-	gcc main.c parser.c -g -Wall -Wextra -Wno-unused-label
+	gcc main.c machine.c hashmap.c parser.c -lmd -g -Wall -Wextra -pedantic -Wno-unused-label
 
