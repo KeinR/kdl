@@ -2,6 +2,6 @@
     (? print [More hwllo])
     (? print [uwu desu] ::
         (? print momomo)
-        (? print {momomo}))
+        (foobar: ? print {momomo}))
     (do + 50 ? print [this should not be visible]))
 

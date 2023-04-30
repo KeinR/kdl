@@ -722,8 +722,13 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
                     e.precChange = 1;
                     bool got = false;
                     contextTracker_t nc;
-                    TEST(getMark(s, contexts[contextsLen - 1], depth, t, i, &nc, &got))
+                    size_t ti = *i + 1;
+                    TEST(getMark(s, contexts[contextsLen - 1], depth, t, &ti, &nc, &got))
                     if (got) {
+                        // getMark, like everyone else, puts us just after its
+                        // content. The loop increments i by one every time, so
+                        // to get the next token we must decrement by one.
+                        *i = ti - 1;
                         contexts[contextsLen++] = nc;
                     }
                     break;
