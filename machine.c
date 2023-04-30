@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#define PROG_BUF_STEP 128
+#define PROG_BUF_STEP 64
 
 // Default malloc
 void *defMalloc(size_t n) {
@@ -171,7 +171,7 @@ bool getVerb(kdl_machine_t *m, const char *name, kdl_verb_t **out) {
     if (r.code != KDL_HASHMAP_EOK) {
         return false;
     }
-    kdl_hashmap_get(&m->vars, r, (void **) out);
+    kdl_hashmap_get(&m->verbs, r, (void **) out);
     return true;
 }
 
@@ -222,12 +222,13 @@ void doCompute(kdl_machine_t *m, kdl_compute_t *c, kdl_data_t *result) {
             }
             break;
         case KDL_OP_ADD:
-            assert(stackLen > 2);
+            assert(stackLen >= 2);
             kdl_data_t *da = &stack[stackLen - 2];
             kdl_data_t *db = &stack[stackLen - 1];
             assert(da->datatype == KDL_DT_FLT || da->datatype == KDL_DT_INT);
             assert(db->datatype == KDL_DT_FLT || db->datatype == KDL_DT_INT);
-            if (da->datatype == KDL_DT_FLT || db->datatype == KDL_DT_INT) {
+            if (da->datatype == KDL_DT_FLT || db->datatype == KDL_DT_FLT) {
+                e.datatype = KDL_DT_FLT;
                 kdl_float_t a = (kdl_float_t)(da->datatype == KDL_DT_FLT ? *((kdl_float_t *)da->data) : *((kdl_int_t *)db->data));
                 kdl_float_t b = (kdl_float_t)(db->datatype == KDL_DT_FLT ? *((kdl_float_t *)db->data) : *((kdl_int_t *)db->data));
                 kdl_float_t r = a + b;
@@ -237,6 +238,7 @@ void doCompute(kdl_machine_t *m, kdl_compute_t *c, kdl_data_t *result) {
                 e.data = (kdl_float_t *) m->s.malloc(sizeof(kdl_float_t));
                 *((kdl_float_t *)e.data) = r;
             } else {
+                e.datatype = KDL_DT_INT;
                 kdl_int_t a = *((kdl_int_t *)db->data);
                 kdl_int_t b = *((kdl_int_t *)db->data);
                 kdl_int_t r = a + b;
@@ -283,6 +285,7 @@ void doCompute(kdl_machine_t *m, kdl_compute_t *c, kdl_data_t *result) {
         default:
             assert(false);
         }
+        assert(e.datatype != KDL_DT_NIL);
         stack[stackLen++] = e;
     }
     assert(stackLen == 1); // Tmp; error check
@@ -319,7 +322,7 @@ void doExecute(kdl_machine_t *m, kdl_execute_t *c) {
 
     // Now add child elements to program
 
-    appendProgram(m, &c->child, m->back);
+    appendProgram(m, &c->child, &m->pbuf[m->back]);
 }
 
 void kdl_machine_setInt(kdl_machine_t *m, const char *name, kdl_int_t value) {
@@ -410,11 +413,11 @@ kdl_error_t kdl_mkMachine(const char *input, kdl_machine_t *out) {
 
     memset(m.pbuf, 0, sizeof(m.pbuf));
 
-    m.front = &m.pbuf[0];
-    m.back = &m.pbuf[1];
+    m.front = 0;
+    m.back = 1;
 
-    appendProgram(&m, &m.start, m.front);
-    appendProgram(&m, &m.start, m.back);
+    appendProgram(&m, &m.start, &m.pbuf[m.front]);
+    appendProgram(&m, &m.start, &m.pbuf[m.back]);
 
     kdl_hashmap_init(m.s, &m.verbs, 4, freeVerb_fwd);
     kdl_hashmap_init(m.s, &m.vars, 4, freeEntry_fwd);
@@ -425,8 +428,9 @@ kdl_error_t kdl_mkMachine(const char *input, kdl_machine_t *out) {
 }
 
 void kdl_machine_run(kdl_machine_t *m) {
-    for (size_t i = 0; i < m->front->length; i++) {
-        kdl_rule_t *r = &m->front->rules[i];
+    kdl_programBuffer_t *front = &m->pbuf[m->front];
+    for (size_t i = 0; i < front->length; i++) {
+        kdl_rule_t *r = &front->rules[i];
         kdl_data_t result;
         doCompute(m, &r->compute, &result);
         if (result.datatype != KDL_DT_INT) {
@@ -435,12 +439,12 @@ void kdl_machine_run(kdl_machine_t *m) {
         doExecute(m, &r->execute);
     }
 
-    kdl_programBuffer_t *tmp = m->front;
+    size_t tmp = m->front;
     m->front = m->back;
     m->back = tmp;
 
-    m->back->length = 0;
-    appendRules(m, m->front->rules, m->front->length, m->back);
+    m->pbuf[m->back].length = 0;
+    appendRules(m, m->pbuf[m->front].rules, m->pbuf[m->front].length, &m->pbuf[m->back]);
 }
 
 void freeMachine(kdl_machine_t *machine) {

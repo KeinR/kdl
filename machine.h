@@ -49,8 +49,8 @@ typedef struct {
 typedef struct _kdl_machine_t {
     kdl_program_t start; // Never changes
     kdl_programBuffer_t pbuf[2];
-    kdl_programBuffer_t *front;
-    kdl_programBuffer_t *back;
+    size_t front;
+    size_t back;
 
     kdl_state_t s;
     kdl_hashmap_t vars;

@@ -108,6 +108,8 @@ int kdl_hashmap_search(kdl_hashmap_t *m, const char *key, kdl_hashmap_result_t *
 }
 
 void kdl_hashmap_get(const kdl_hashmap_t *m, kdl_hashmap_result_t search, void **data) {
+    assert(search.bucket < m->nBuckets && search.data < m->buckets[search.bucket].length);
+
     kdl_hashmap_data_t d = m->buckets[search.bucket].data[search.data];
     *data = d.data;
 }
