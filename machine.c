@@ -397,8 +397,7 @@ void kdl_machine_addVerb(kdl_machine_t *m, const char *target, kdl_verb_t v) {
 }
 
 
-
-kdl_error_t kdl_mkMachine(const char *input, kdl_machine_t *out) {
+void kdl_mkMachine(kdl_machine_t *out) {
     kdl_machine_t m;
     memset(&m, 0, sizeof(kdl_machine_t));
 
@@ -406,24 +405,32 @@ kdl_error_t kdl_mkMachine(const char *input, kdl_machine_t *out) {
     m.s.realloc = defRealloc;
     m.s.free = defFree;
 
-    kdl_error_t e = kdl_parse(m.s, input, &m.start);
-    if (e.code != KDL_ERR_OK) {
-        return e;
-    }
-
+    memset(&m.start, 0, sizeof(kdl_program_t));
     memset(m.pbuf, 0, sizeof(m.pbuf));
 
     m.front = 0;
     m.back = 1;
 
-    appendProgram(&m, &m.start, &m.pbuf[m.front]);
-    appendProgram(&m, &m.start, &m.pbuf[m.back]);
-
     kdl_hashmap_init(m.s, &m.verbs, 4, freeVerb_fwd);
     kdl_hashmap_init(m.s, &m.vars, 4, freeEntry_fwd);
 
     *out = m;
+}
 
+
+void rewindToStart(kdl_machine_t *m) {
+    appendProgram(m, &m->start, &m->pbuf[m->front]);
+    appendProgram(m, &m->start, &m->pbuf[m->back]);
+}
+
+kdl_error_t kdl_machine_load(kdl_machine_t *m, const char *input) {
+    kdl_program_t p;
+    kdl_error_t e = kdl_parse(m->s, input, &p);
+    if (e.code != KDL_ERR_OK) {
+        return e;
+    }
+    m->start = p;
+    rewindToStart(m);
     return e;
 }
 
@@ -447,7 +454,7 @@ void kdl_machine_run(kdl_machine_t *m) {
     appendRules(m, m->pbuf[m->front].rules, m->pbuf[m->front].length, &m->pbuf[m->back]);
 }
 
-void freeMachine(kdl_machine_t *machine) {
+void kdl_machine_free(kdl_machine_t *machine) {
     kdl_freeProgram(machine->s, &machine->start);
     machine->s.free(machine->pbuf[0].rules);
     machine->s.free(machine->pbuf[1].rules);
