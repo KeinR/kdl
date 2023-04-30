@@ -239,7 +239,7 @@ void doCompute(kdl_machine_t *m, kdl_compute_t *c, kdl_data_t *result) {
                 *((kdl_float_t *)e.data) = r;
             } else {
                 e.datatype = KDL_DT_INT;
-                kdl_int_t a = *((kdl_int_t *)db->data);
+                kdl_int_t a = *((kdl_int_t *)da->data);
                 kdl_int_t b = *((kdl_int_t *)db->data);
                 kdl_int_t r = a + b;
                 freeData(m->s, da);
@@ -438,12 +438,20 @@ void kdl_machine_run(kdl_machine_t *m) {
     kdl_programBuffer_t *front = &m->pbuf[m->front];
     for (size_t i = 0; i < front->length; i++) {
         kdl_rule_t *r = &front->rules[i];
-        kdl_data_t result;
-        doCompute(m, &r->compute, &result);
-        if (result.datatype != KDL_DT_INT) {
-            assert(false); // Error: conditional expression did not return int
+        bool run = false;
+        if (r->compute.length > 0) {
+            kdl_data_t result;
+            doCompute(m, &r->compute, &result);
+            if (result.datatype != KDL_DT_INT) {
+                assert(false); // Error: conditional expression did not return int
+            }
+            run = *((kdl_int_t*)result.data) == 0 ? false : true;
+        } else {
+            run = true;
         }
-        doExecute(m, &r->execute);
+        if (run) {
+            doExecute(m, &r->execute);
+        }
     }
 
     size_t tmp = m->front;

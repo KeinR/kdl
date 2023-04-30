@@ -812,7 +812,7 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
 
     ERROR_NONE
 
-    for (size_t f = 0; f < contextsLen; f++) {
+    for (size_t f = 1; f < contextsLen; f++) {
         freeContext(s, &contexts[f]);
     }
 
@@ -877,7 +877,6 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
     // Very fancy.
     memset(&result, 0, sizeof(kdl_execute_t));
     kdl_token_t token = t->tokens[*i];
-    bool doExpression = false;
     bool gotNewContext = false;
     contextTracker_t context = parentContext;
 
@@ -906,7 +905,6 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
         result.order.params = (kdl_compute_t *) s.realloc(result.order.params, sizeof(kdl_compute_t) * result.order.nParams);
 
     } else if (tokenEqChar22(token, ':', ':', KDL_TK_CTRL)) {
-        doExpression = true;
         if (gotNewContext) {
             // We have a new mark, "(xxx: ...", and immediately go to rule list. What?
             ERROR(KDL_ERR_UNX, "Unexpected '::' while parsing execute", token)
@@ -917,9 +915,8 @@ kdl_error_t getExecute(kdl_state_t s, contextTracker_t parentContext, kdl_tokeni
 
     kdl_token_t token2 = t->tokens[*i];
 
-    assert(doExpression == tokenEqChar22(token2, ':', ':', KDL_TK_CTRL));
-    // So it's redundent
-    if (doExpression || tokenEqChar22(token2, ':', ':', KDL_TK_CTRL)) {
+    if (tokenEqChar22(token2, ':', ':', KDL_TK_CTRL)) {
+        (*i)++;
         TEST(getProgram(s, context, t, i, &result.child, ')'))
     } else {
         kdl_token_t finalToken = t->tokens[*i];
@@ -1007,6 +1004,8 @@ kdl_error_t getProgram(kdl_state_t s, contextTracker_t context, kdl_tokenization
         token = t->tokens[*i];
     }
 
+    (*i)++;
+
     result.rules = (kdl_rule_t *) s.realloc(result.rules, sizeof(kdl_rule_t) * result.length);
 
     *out = result;
@@ -1029,6 +1028,7 @@ kdl_error_t kdl_parse(kdl_state_t s, const char *input, kdl_program_t *out) {
     contextTracker_t context;
 
     memset(&tokens, 0, sizeof(kdl_tokenization_t));
+    memset(&program, 0, sizeof(kdl_program_t));
     mkContext(s, 0, &context);
 
     TEST(tokenize(s, input, &tokens))
