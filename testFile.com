@@ -2,5 +2,5 @@
     (? print [More hwllo])
     (? print [uwu desu] ::
         (? print momomo))
-    (50 ? print [this should not be visible]))
+    (do + 50 ? print [this should not be visible]))
 

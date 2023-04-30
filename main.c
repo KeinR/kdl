@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
     verb.datatypes[0] = KDL_DT_STR;
     kdl_machine_addVerb(&machine, "print", verb);
     kdl_machine_setString(&machine, "momomo", "TYRKEY");
-    kdl_machine_setInt(&machine, "do", 50);
+    kdl_machine_setInt(&machine, "do", -50);
     printf("Running machine.\n");
     kdl_machine_run(&machine);
     printf("Running machine2.\n");
