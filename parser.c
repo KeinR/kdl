@@ -946,6 +946,7 @@ kdl_error_t getRule(kdl_state_t s, contextTracker_t context, kdl_tokenization_t 
 
     kdl_rule_t result;
     memset(&result, 0, sizeof(kdl_rule_t));
+    result.active = false; // Formality
 
     if (!tokenEqChar(t->tokens[*i], '(', KDL_TK_CTRL)) {
         ERROR(KDL_ERR_EXP, "Expected '(' at start of rule", t->tokens[*i])

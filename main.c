@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
     UNUSED(argc);
     UNUSED(argv);
 
-    const char *input = "(1 + 0 ? print [Hewlow world] :: (? print [More hwllo]))";
+    const char *input = "(1 + 0 ? print [Hewlow world] :: (? print [More hwllo])\n   (? print [uwu desu] :: (? print [momomo])))";
     kdl_machine_t machine;
     kdl_mkMachine(&machine);
     kdl_error_t error = kdl_machine_load(&machine, input);
@@ -40,6 +40,8 @@ int main(int argc, char **argv) {
     printf("Running machine.\n");
     kdl_machine_run(&machine);
     printf("Running machine2.\n");
+    kdl_machine_run(&machine);
+    printf("Running machine3.\n");
     kdl_machine_run(&machine);
     printf("No segfaults!\n");
     kdl_machine_free(&machine);

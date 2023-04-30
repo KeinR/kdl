@@ -60,12 +60,23 @@ void appendRules(kdl_machine_t *m, kdl_rule_t *rules, size_t length, kdl_program
         dest->size = (dest->length + length + PROG_BUF_STEP) / PROG_BUF_STEP * PROG_BUF_STEP;
         dest->rules = (kdl_rule_t *) m->s.realloc(dest->rules, sizeof(kdl_rule_t) * dest->size);
     }
-    memcpy(dest->rules + dest->length, rules, sizeof(kdl_rule_t) * length);
-    dest->length += length;
+    for (size_t i = 0; i < length; i++) {
+        if (!rules[i].active) {
+            rules[i].active = true;
+            dest->rules[dest->length++] = rules[i];
+        }
+    }
 }
 
 void appendProgram(kdl_machine_t *m, kdl_program_t *src, kdl_programBuffer_t *dest) {
     appendRules(m, src->rules, src->length, dest);
+}
+
+void backwriteBuffer(kdl_machine_t *m, kdl_programBuffer_t *src, kdl_programBuffer_t *dest) {
+    dest->size = src->size;
+    dest->length = src->length;
+    dest->rules = (kdl_rule_t *) m->s.realloc(dest->rules, sizeof(kdl_rule_t) * dest->size);
+    memcpy(dest->rules, src->rules, sizeof(kdl_rule_t) * src->length);
 }
 
 void copyString(kdl_machine_t *m, const char *src, char **dest) {
@@ -419,8 +430,10 @@ void kdl_mkMachine(kdl_machine_t *out) {
 
 
 void rewindToStart(kdl_machine_t *m) {
+    m->pbuf[m->front].length = 0;
+    m->pbuf[m->back].length = 0;
     appendProgram(m, &m->start, &m->pbuf[m->front]);
-    appendProgram(m, &m->start, &m->pbuf[m->back]);
+    backwriteBuffer(m, &m->pbuf[m->front], &m->pbuf[m->back]);
 }
 
 kdl_error_t kdl_machine_load(kdl_machine_t *m, const char *input) {
@@ -459,7 +472,7 @@ void kdl_machine_run(kdl_machine_t *m) {
     m->back = tmp;
 
     m->pbuf[m->back].length = 0;
-    appendRules(m, m->pbuf[m->front].rules, m->pbuf[m->front].length, &m->pbuf[m->back]);
+    backwriteBuffer(m, &m->pbuf[m->front], &m->pbuf[m->back]);
 }
 
 void kdl_machine_free(kdl_machine_t *machine) {

@@ -109,6 +109,9 @@ typedef struct {
 typedef struct kdl_rule_p {
     kdl_compute_t compute;
     kdl_execute_t execute;
+
+    // For execution phase use
+    bool active;
 } kdl_rule_t;
 
 kdl_error_t kdl_parse(kdl_state_t s, const char *input, kdl_program_t *program);
