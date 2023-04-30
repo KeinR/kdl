@@ -136,7 +136,7 @@ bool getVarRef(kdl_machine_t *m, const char *fullName, kdl_entry_t **out) {
     if (r.code != KDL_HASHMAP_EOK) {
         return false;
     }
-    kdl_hashmap_get(&m->vars, r, (void **) &out);
+    kdl_hashmap_get(&m->vars, r, (void **) out);
     return true;
 }
 
@@ -162,7 +162,9 @@ void setVar(kdl_machine_t *m, const char *fullName, int type, void *data) {
 
 bool getVarByName(kdl_machine_t *m, const char *fullName, kdl_data_t *out) {
     kdl_entry_t *data;
-    getVarRef(m, fullName, &data);
+    if (!getVarRef(m, fullName, &data)) {
+        return false;
+    }
     copyData(m, data->data.datatype, data->data.data, out);
     return true;
 }
@@ -337,15 +339,15 @@ void doExecute(kdl_machine_t *m, kdl_execute_t *c) {
 }
 
 void kdl_machine_setInt(kdl_machine_t *m, const char *name, kdl_int_t value) {
-    setVar(m, name, KDL_DT_INT, &value);
+    setVar(m, name, KDL_DT_INT, (void *) &value);
 }
 
 void kdl_machine_setString(kdl_machine_t *m, const char *name, const char *value) {
-    setVar(m, name, KDL_DT_STR, &value);
+    setVar(m, name, KDL_DT_STR, (void *) value);
 }
 
 void kdl_machine_setFloat(kdl_machine_t *m, const char *name, kdl_float_t value) {
-    setVar(m, name, KDL_DT_FLT, &value);
+    setVar(m, name, KDL_DT_FLT, (void *) &value);
 }
 
 int kdl_machine_getInt(kdl_machine_t *m, const char *name, kdl_int_t *value) {
