@@ -683,15 +683,15 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
                     break;
                 case '-':
                     op = KDL_OP_SUB;
-                    e.prec = 4;
+                    e.prec = 5;
                     break;
                 case '/':
                     op = KDL_OP_DIV;
-                    e.prec = 5;
+                    e.prec = 7;
                     break;
                 case '*':
                     op = KDL_OP_MUL;
-                    e.prec = 5;
+                    e.prec = 6;
                     break;
                 case '=':
                     op = KDL_OP_EQU;
@@ -715,7 +715,7 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
                     break;
                 case '!':
                     op = KDL_OP_NOT;
-                    e.prec = 6;
+                    e.prec = 8;
                     break;
                 case '(': {
                     depth++;
