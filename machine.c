@@ -7,6 +7,110 @@
 
 #define PROG_BUF_STEP 64
 
+// -- arithmetic functions
+
+kdl_float_t addFloat(kdl_float_t a, kdl_float_t b) {
+    return a + b;
+}
+
+kdl_int_t addInt(kdl_int_t a, kdl_int_t b) {
+    return a + b;
+}
+
+kdl_float_t subFloat(kdl_float_t a, kdl_float_t b) {
+    return a - b;
+}
+
+kdl_int_t subInt(kdl_int_t a, kdl_int_t b) {
+    return a - b;
+}
+
+kdl_float_t divFloat(kdl_float_t a, kdl_float_t b) {
+    return a / b;
+}
+
+kdl_int_t divInt(kdl_int_t a, kdl_int_t b) {
+    return a / b;
+}
+
+kdl_float_t mulFloat(kdl_float_t a, kdl_float_t b) {
+    return a * b;
+}
+
+kdl_int_t mulInt(kdl_int_t a, kdl_int_t b) {
+    return a * b;
+}
+
+kdl_int_t equFloat(kdl_float_t a, kdl_float_t b) {
+    return a == b;
+}
+
+kdl_int_t equInt(kdl_int_t a, kdl_int_t b) {
+    return a == b;
+}
+
+kdl_int_t leqFloat(kdl_float_t a, kdl_float_t b) {
+    return a <= b;
+}
+
+kdl_int_t leqInt(kdl_int_t a, kdl_int_t b) {
+    return a <= b;
+}
+
+kdl_int_t geqInt(kdl_int_t a, kdl_int_t b) {
+    return a >= b;
+}
+
+kdl_int_t geqFloat(kdl_float_t a, kdl_float_t b) {
+    return a >= b;
+}
+
+kdl_int_t gthFloat(kdl_float_t a, kdl_float_t b) {
+    return a > b;
+}
+
+kdl_int_t gthInt(kdl_int_t a, kdl_int_t b) {
+    return a > b;
+}
+
+kdl_int_t lthFloat(kdl_float_t a, kdl_float_t b) {
+    return a < b;
+}
+
+kdl_int_t lthInt(kdl_int_t a, kdl_int_t b) {
+    return a < b;
+}
+
+kdl_int_t andFloat(kdl_float_t a, kdl_float_t b) {
+    return (int)a && (int)b;
+}
+
+kdl_int_t andInt(kdl_int_t a, kdl_int_t b) {
+    return a && b;
+}
+
+kdl_int_t orFloat(kdl_float_t a, kdl_float_t b) {
+    return (int)a || (int)b;
+}
+
+kdl_int_t orInt(kdl_int_t a, kdl_int_t b) {
+    return a || b;
+}
+
+kdl_int_t notFloat(kdl_float_t a) {
+    return !((int)a);
+}
+
+kdl_int_t notInt(kdl_int_t a) {
+    return !((int)a);
+}
+
+kdl_int_t notint(kdl_int_t a) {
+    return !a;
+}
+
+// -- end arithmetic functions
+
 // Default malloc
 void *defMalloc(size_t n) {
     void *p = malloc(n);
@@ -199,6 +303,95 @@ void setVerb(kdl_machine_t *m, const char *name, kdl_verb_t verb) {
     }
 }
 
+typedef kdl_float_t(fltFunc_t)(kdl_float_t,kdl_float_t);
+typedef kdl_int_t(fltIntFunc_t)(kdl_float_t,kdl_float_t);
+typedef kdl_int_t(intFunc_t)(kdl_int_t,kdl_int_t);
+
+typedef kdl_int_t(bIntFunc_t)(kdl_int_t);
+typedef kdl_int_t(bFltFunc_t)(kdl_float_t);
+
+void arithmetic(kdl_machine_t *m, kdl_data_t *stack, size_t *stackLen, fltFunc_t fltFunc, intFunc_t intFunc, kdl_data_t *result) {
+    assert(*stackLen >= 2);
+    kdl_data_t *a = &stack[*stackLen - 2];
+    kdl_data_t *b = &stack[*stackLen - 1];
+    assert(a->datatype == KDL_DT_FLT || a->datatype == KDL_DT_INT); // Error
+    assert(b->datatype == KDL_DT_FLT || b->datatype == KDL_DT_INT); // Error
+    if (a->datatype == KDL_DT_FLT || b->datatype == KDL_DT_FLT) {
+        result->datatype = KDL_DT_FLT;
+        kdl_float_t av = (kdl_float_t)(a->datatype == KDL_DT_FLT ? *((kdl_float_t *)a->data) : *((kdl_int_t *)a->data));
+        kdl_float_t bv = (kdl_float_t)(b->datatype == KDL_DT_FLT ? *((kdl_float_t *)b->data) : *((kdl_int_t *)b->data));
+        kdl_float_t r = fltFunc(av, bv);
+        freeData(m->s, a);
+        freeData(m->s, b);
+        *stackLen -= 2;
+        result->data = (kdl_float_t *) m->s.malloc(sizeof(kdl_float_t));
+        *((kdl_float_t *)result->data) = r;
+    } else {
+        result->datatype = KDL_DT_INT;
+        kdl_int_t av = (kdl_int_t)(a->datatype != KDL_DT_INT ? *((kdl_float_t *)a->data) : *((kdl_int_t *)a->data));
+        kdl_int_t bv = (kdl_int_t)(b->datatype != KDL_DT_INT ? *((kdl_float_t *)b->data) : *((kdl_int_t *)b->data));
+        kdl_int_t r = intFunc(av, bv);
+        freeData(m->s, a);
+        freeData(m->s, b);
+        *stackLen -= 2;
+        result->data = (kdl_int_t *) m->s.malloc(sizeof(kdl_int_t));
+        *((kdl_int_t *)result->data) = r;
+    }
+}
+
+void arithmeticInt(kdl_machine_t *m, kdl_data_t *stack, size_t *stackLen, fltIntFunc_t fltFunc, intFunc_t intFunc, kdl_data_t *result) {
+    assert(*stackLen >= 2);
+    kdl_data_t *a = &stack[*stackLen - 2];
+    kdl_data_t *b = &stack[*stackLen - 1];
+    assert(a->datatype == KDL_DT_FLT || a->datatype == KDL_DT_INT); // Error
+    assert(b->datatype == KDL_DT_FLT || b->datatype == KDL_DT_INT); // Error
+    if (a->datatype == KDL_DT_FLT || b->datatype == KDL_DT_FLT) {
+        result->datatype = KDL_DT_INT;
+        kdl_float_t av = (kdl_float_t)(a->datatype == KDL_DT_FLT ? *((kdl_float_t *)a->data) : *((kdl_int_t *)a->data));
+        kdl_float_t bv = (kdl_float_t)(b->datatype == KDL_DT_FLT ? *((kdl_float_t *)b->data) : *((kdl_int_t *)b->data));
+        kdl_int_t r = fltFunc(av, bv);
+        freeData(m->s, a);
+        freeData(m->s, b);
+        *stackLen -= 2;
+        result->data = (kdl_int_t *) m->s.malloc(sizeof(kdl_int_t));
+        *((kdl_float_t *)result->data) = r;
+    } else {
+        result->datatype = KDL_DT_INT;
+        kdl_int_t av = (kdl_int_t)(a->datatype == KDL_DT_INT ? *((kdl_float_t *)a->data) : *((kdl_int_t *)a->data));
+        kdl_int_t bv = (kdl_int_t)(b->datatype == KDL_DT_INT ? *((kdl_float_t *)b->data) : *((kdl_int_t *)b->data));
+        kdl_int_t r = intFunc(av, bv);
+        freeData(m->s, a);
+        freeData(m->s, b);
+        *stackLen -= 2;
+        result->data = (kdl_int_t *) m->s.malloc(sizeof(kdl_int_t));
+        *((kdl_int_t *)result->data) = r;
+    }
+}
+
+void binaryArithmetic(kdl_machine_t *m, kdl_data_t *stack, size_t *stackLen, bFltFunc_t fltFunc, bIntFunc_t intFunc, kdl_data_t *result) {
+    assert(*stackLen >= 1);
+    kdl_data_t *a = &stack[*stackLen - 1];
+    assert(a->datatype == KDL_DT_FLT || a->datatype == KDL_DT_INT); // Error
+    if (a->datatype == KDL_DT_FLT) {
+        result->datatype = KDL_DT_INT;
+        kdl_float_t av = *((kdl_float_t *)a->data);
+        kdl_float_t r = fltFunc(av);
+        freeData(m->s, a);
+        *stackLen -= 1;
+        result->data = (kdl_int_t *) m->s.malloc(sizeof(kdl_float_t));
+        *((kdl_int_t *)result->data) = r;
+    } else {
+        result->datatype = KDL_DT_INT;
+        kdl_int_t av = *((kdl_int_t *)a->data);
+        kdl_int_t r = intFunc(av);
+        freeData(m->s, a);
+        *stackLen -= 1;
+        result->data = (kdl_int_t *) m->s.malloc(sizeof(kdl_int_t));
+        *((kdl_int_t *)result->data) = r;
+
+    }
+}
+
 void doCompute(kdl_machine_t *m, kdl_compute_t *c, kdl_data_t *result) {
     kdl_data_t *stack = m->s.malloc(sizeof(kdl_data_t) * c->length);
     size_t stackLen = 0;
@@ -235,65 +428,40 @@ void doCompute(kdl_machine_t *m, kdl_compute_t *c, kdl_data_t *result) {
             }
             break;
         case KDL_OP_ADD:
-            assert(stackLen >= 2);
-            kdl_data_t *da = &stack[stackLen - 2];
-            kdl_data_t *db = &stack[stackLen - 1];
-            assert(da->datatype == KDL_DT_FLT || da->datatype == KDL_DT_INT);
-            assert(db->datatype == KDL_DT_FLT || db->datatype == KDL_DT_INT);
-            if (da->datatype == KDL_DT_FLT || db->datatype == KDL_DT_FLT) {
-                e.datatype = KDL_DT_FLT;
-                kdl_float_t a = (kdl_float_t)(da->datatype == KDL_DT_FLT ? *((kdl_float_t *)da->data) : *((kdl_int_t *)db->data));
-                kdl_float_t b = (kdl_float_t)(db->datatype == KDL_DT_FLT ? *((kdl_float_t *)db->data) : *((kdl_int_t *)db->data));
-                kdl_float_t r = a + b;
-                freeData(m->s, da);
-                freeData(m->s, db);
-                stackLen -= 2;
-                e.data = (kdl_float_t *) m->s.malloc(sizeof(kdl_float_t));
-                *((kdl_float_t *)e.data) = r;
-            } else {
-                e.datatype = KDL_DT_INT;
-                kdl_int_t a = *((kdl_int_t *)da->data);
-                kdl_int_t b = *((kdl_int_t *)db->data);
-                kdl_int_t r = a + b;
-                freeData(m->s, da);
-                freeData(m->s, db);
-                stackLen -= 2;
-                e.data = (kdl_int_t *) m->s.malloc(sizeof(kdl_int_t));
-                *((kdl_int_t *)e.data) = r;
-            }
+            arithmetic(m, stack, &stackLen, addFloat, addInt, &e);
             break;
         case KDL_OP_SUB:
-            assert(false);
+            arithmetic(m, stack, &stackLen, subFloat, subInt, &e);
             break;
         case KDL_OP_DIV:
-            assert(false);
+            arithmetic(m, stack, &stackLen, divFloat, divInt, &e);
             break;
         case KDL_OP_MUL:
-            assert(false);
+            arithmetic(m, stack, &stackLen, mulFloat, mulInt, &e);
             break;
         case KDL_OP_EQU:
-            assert(false);
+            arithmeticInt(m, stack, &stackLen, equFloat, equInt, &e);
             break;
         case KDL_OP_LEQ:
-            assert(false);
+            arithmeticInt(m, stack, &stackLen, leqFloat, leqInt, &e);
             break;
         case KDL_OP_GEQ:
-            assert(false);
+            arithmeticInt(m, stack, &stackLen, geqFloat, geqInt, &e);
             break;
         case KDL_OP_LTH:
-            assert(false);
+            arithmeticInt(m, stack, &stackLen, lthFloat, lthInt, &e);
             break;
         case KDL_OP_GTH:
-            assert(false);
+            arithmeticInt(m, stack, &stackLen, gthFloat, gthInt, &e);
             break;
         case KDL_OP_AND:
-            assert(false);
+            arithmeticInt(m, stack, &stackLen, andFloat, andInt, &e);
             break;
         case KDL_OP_OR:
-            assert(false);
+            arithmeticInt(m, stack, &stackLen, orFloat, orInt, &e);
             break;
         case KDL_OP_NOT:
-            assert(false);
+            binaryArithmetic(m, stack, &stackLen, notFloat, notInt, &e);
             break;
         default:
             assert(false);
@@ -311,7 +479,7 @@ void doExecute(kdl_machine_t *m, kdl_execute_t *c) {
     if (!getVerb(m, c->order.verb, &verb)) {
         assert(false); // Error: verb not found
     }
-    if (c->order.nParams != verb->datatypesLen) {
+    if (verb->validate && c->order.nParams != verb->datatypesLen) {
         assert(false); // Error: invalid number of parameters
     }
     kdl_data_t *params = (kdl_data_t *) m->s.malloc(sizeof(kdl_data_t) * c->order.nParams);
@@ -319,7 +487,7 @@ void doExecute(kdl_machine_t *m, kdl_execute_t *c) {
     for (size_t i = 0; i < c->order.nParams; i++) {
         kdl_data_t result;
         doCompute(m, &c->order.params[i], &result);
-        if (result.datatype != verb->datatypes[i]) {
+        if (verb->validate && result.datatype != verb->datatypes[i]) {
             // TODO: handle correctly
             assert(false); // Error: datatype mismatch
         }

@@ -13,7 +13,21 @@ void cb_print(kdl_machine_t *m, const char *context, const char *name, kdl_data_
     UNUSED(context);
     UNUSED(name);
     UNUSED(length);
-    printf("vm::print: \"%s\"\n", (char *) params[0].data);
+    printf("vm::print:");
+    for (size_t i = 0; i < length; i++) {
+        switch(params[i].datatype) {
+        case KDL_DT_INT:
+            printf(" %llu", *((kdl_int_t *) params[i].data));
+            break;
+        case KDL_DT_FLT:
+            printf(" %Lf", *((kdl_float_t *) params[i].data));
+            break;
+        case KDL_DT_STR:
+            printf(" %s", (char *) params[i].data);
+            break;
+        }
+    }
+    printf("\n");
 }
 
 int main(int argc, char **argv) {
@@ -43,6 +57,7 @@ int main(int argc, char **argv) {
         }
     }
     kdl_verb_t verb;
+    verb.validate = false;
     verb.func = cb_print;
     verb.datatypesLen = 1;
     verb.datatypes[0] = KDL_DT_STR;

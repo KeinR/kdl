@@ -32,6 +32,7 @@ typedef struct {
     kdl_function_t func;
     int datatypes[KDL_NFPARAMS];
     size_t datatypesLen;
+    bool validate;
 } kdl_verb_t;
 
 typedef struct {

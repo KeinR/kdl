@@ -658,6 +658,7 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
             ERROR(KDL_ERR_BUF, "Expression buffer size exceeded (elements/operations)", token)
         }
         if (tokenEqChar(token, terminate, KDL_TK_CTRL) && terminate != ')') {
+            (*i)++;
             break;
         }
 
@@ -737,8 +738,8 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
                     depth--;
                     e.precChange = -1;
                     assert(contextsLen > 0);
-                    if (depth < contexts[contextsLen - 1].depth && contextsLen == 1) {
-                        assert(depth < parent.depth); // Same thing
+                    if (depth <= contexts[contextsLen - 1].depth && contextsLen == 1) {
+                        assert(depth <= parent.depth); // Same thing
                         if (terminate == ')') {
                             loop = false;
                         } else {
@@ -792,6 +793,8 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
         assert(e.prec <= MAX_PREC);
     }
 
+
+
     infixToPostfix(s, elements, elementsLen, MAX_PREC, (void ***) &stack, &stackLen);
 
     // Flatten the stack.
@@ -806,7 +809,6 @@ kdl_error_t getCompute(kdl_state_t s, contextTracker_t parent, kdl_tokenization_
     }
 
     *out = compute;
-    (*i)++; // Go past our terminator
 
     ERROR_IS
 
@@ -844,9 +846,9 @@ kdl_error_t getValue(kdl_state_t s, contextTracker_t parentContext, kdl_tokeniza
     }
     if (token.type == KDL_TK_CTRL) {
         // Thus, must be (, and so we can forward it...
-        (*i)++;
+        // (*i)++; getCompute needs the parenthesies
         TEST(getCompute(s, parentContext, t, i, &result, ')'))
-        (*i)++;
+        // (*i)++; getCompute consumes everything
     } else {
         // Must be single-token literal, then
         kdl_op_t op;
