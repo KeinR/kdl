@@ -114,7 +114,7 @@ kdl_int_t notint(kdl_int_t a) {
 // Default malloc
 void *defMalloc(size_t n) {
     void *p = malloc(n);
-    if (p == NULL) {
+    if (p == NULL && n != 0) {
         printf("Out of memory\n");
         exit(1);
     }
@@ -124,7 +124,7 @@ void *defMalloc(size_t n) {
 // Default realloc
 void *defRealloc(void *p, size_t n) {
     void *np = realloc(p, n);
-    if (np == NULL) {
+    if (np == NULL && n != 0) {
         printf("Out of memory\n");
         exit(1);
     }
@@ -229,56 +229,46 @@ kdl_entry_t *mkBlankVar(kdl_machine_t *m, const char *fullName) {
     val->name = (char *) m->s.malloc(sizeof(char) * size);
     memcpy(val->name, fullName, size);
     val->watcher = NULL;
-    val->data.datatype = KDL_DT_NIL;
-    val->data.data = NULL;
+    val->data.datatype = KDL_DT_INT;
+    kdl_int_t *v = (kdl_int_t *) m->s.malloc(sizeof(kdl_int_t));
+    *v = 0;
+    val->data.data = (void *) v;
     return val;
 }
 
-bool getVarRef(kdl_machine_t *m, const char *fullName, kdl_entry_t **out) {
+void getVarRef(kdl_machine_t *m, const char *fullName, kdl_entry_t **out) {
     kdl_hashmap_result_t r;
     kdl_hashmap_search(&m->vars, fullName, &r);
     if (r.code != KDL_HASHMAP_EOK) {
-        return false;
+        kdl_entry_t *result = mkBlankVar(m, fullName);
+        kdl_hashmap_insert(&m->vars, fullName, (void *) result);
+        *out = result;
+    } else {
+        kdl_hashmap_get(&m->vars, r, (void **) out);
     }
-    kdl_hashmap_get(&m->vars, r, (void **) out);
-    return true;
-}
-
-bool varExist(kdl_machine_t *m, const char *fullName) {
-    kdl_hashmap_result_t r;
-    kdl_hashmap_search(&m->vars, fullName, &r);
-    return r.code == KDL_HASHMAP_EOK;
 }
 
 void setVar(kdl_machine_t *m, const char *fullName, int type, void *data) {
     kdl_entry_t *ptr;
-    if (getVarRef(m, fullName, &ptr)) {
-        freeData(m->s, &ptr->data);
-    } else {
-        ptr = mkBlankVar(m, fullName);
-        kdl_hashmap_insert(&m->vars, fullName, ptr);
-    }
+    getVarRef(m, fullName, &ptr);
+    freeData(m->s, &ptr->data);
     copyData(m, type, data, &ptr->data);
     if (ptr->watcher) {
         ptr->watcher(m, fullName, &ptr->data);
     }
 }
 
-bool getVarByName(kdl_machine_t *m, const char *fullName, kdl_data_t *out) {
+void getVarByName(kdl_machine_t *m, const char *fullName, kdl_data_t *out) {
     kdl_entry_t *data;
-    if (!getVarRef(m, fullName, &data)) {
-        return false;
-    }
+    getVarRef(m, fullName, &data);
     copyData(m, data->data.datatype, data->data.data, out);
-    return true;
 }
 
-bool getVar(kdl_machine_t *m, const char *context, const char *name, kdl_data_t *out) {
+void getVar(kdl_machine_t *m, const char *context, const char *name, kdl_data_t *out) {
     char *lookup = NULL;
     mkName(m, context, name, &lookup);
-    bool result = getVarByName(m, lookup, out);
+    getVarByName(m, lookup, out);
     m->s.free(lookup);
-    return result;
 }
 
 // Does not do any copy
@@ -357,8 +347,8 @@ void arithmeticInt(kdl_machine_t *m, kdl_data_t *stack, size_t *stackLen, fltInt
         *((kdl_float_t *)result->data) = r;
     } else {
         result->datatype = KDL_DT_INT;
-        kdl_int_t av = (kdl_int_t)(a->datatype == KDL_DT_INT ? *((kdl_float_t *)a->data) : *((kdl_int_t *)a->data));
-        kdl_int_t bv = (kdl_int_t)(b->datatype == KDL_DT_INT ? *((kdl_float_t *)b->data) : *((kdl_int_t *)b->data));
+        kdl_int_t av = (kdl_int_t)(a->datatype != KDL_DT_INT ? *((kdl_float_t *)a->data) : *((kdl_int_t *)a->data));
+        kdl_int_t bv = (kdl_int_t)(b->datatype != KDL_DT_INT ? *((kdl_float_t *)b->data) : *((kdl_int_t *)b->data));
         kdl_int_t r = intFunc(av, bv);
         freeData(m->s, a);
         freeData(m->s, b);
@@ -422,10 +412,7 @@ void doCompute(kdl_machine_t *m, kdl_compute_t *c, kdl_data_t *result) {
             copyData(m, KDL_DT_PRC, op->value, &e);
             break;
         case KDL_OP_PVAR:
-            if (!getVar(m, op->context, (char *) op->value, &e)) {
-                printf("Error: variable not found\n"); // tmp
-                // Error: variable not found
-            }
+            getVar(m, op->context, (char *) op->value, &e);
             break;
         case KDL_OP_ADD:
             arithmetic(m, stack, &stackLen, addFloat, addInt, &e);
@@ -477,7 +464,8 @@ void doCompute(kdl_machine_t *m, kdl_compute_t *c, kdl_data_t *result) {
 void doExecute(kdl_machine_t *m, kdl_execute_t *c) {
     kdl_verb_t *verb;
     if (!getVerb(m, c->order.verb, &verb)) {
-        assert(false); // Error: verb not found
+        assert(m->defVerb.func != NULL); // Error: verb not found, and no fallback specified
+        verb = &m->defVerb;
     }
     if (verb->validate && c->order.nParams != verb->datatypesLen) {
         assert(false); // Error: invalid number of parameters
@@ -520,56 +508,43 @@ void kdl_machine_setFloat(kdl_machine_t *m, const char *name, kdl_float_t value)
 
 int kdl_machine_getInt(kdl_machine_t *m, const char *name, kdl_int_t *value) {
     kdl_entry_t *e;
-    if (getVarRef(m, name, &e)) {
-        if (e->data.datatype == KDL_DT_INT) {
-            *value = *((kdl_int_t *)e->data.data);
-            return KDL_ERR_OK;
-        } else {
-            return KDL_ERR_TYP;
-        }
+    getVarRef(m, name, &e);
+    if (e->data.datatype == KDL_DT_INT) {
+        *value = *((kdl_int_t *)e->data.data);
+        return KDL_ERR_OK;
     } else {
-        return KDL_ERR_NTF;
+        return KDL_ERR_TYP;
     }
 }
 
 int kdl_machine_getString(kdl_machine_t *m, const char *name, const char **value) {
     kdl_entry_t *e;
-    if (getVarRef(m, name, &e)) {
-        if (e->data.datatype == KDL_DT_STR) {
-            *value = (char *) e->data.data;
-            return KDL_ERR_OK;
-        } else {
-            return KDL_ERR_TYP;
-        }
+    getVarRef(m, name, &e);
+    if (e->data.datatype == KDL_DT_STR) {
+        *value = (char *) e->data.data;
+        return KDL_ERR_OK;
     } else {
-        return KDL_ERR_NTF;
+        return KDL_ERR_TYP;
     }
 }
 
 int kdl_machine_getFloat(kdl_machine_t *m, const char *name, kdl_float_t *value) {
     kdl_entry_t *e;
-    if (getVarRef(m, name, &e)) {
-        if (e->data.datatype == KDL_DT_FLT) {
-            *value = *((kdl_float_t *)e->data.data);
-            return KDL_ERR_OK;
-        } else {
-            return KDL_ERR_TYP;
-        }
+    getVarRef(m, name, &e);
+    if (e->data.datatype == KDL_DT_FLT) {
+        *value = *((kdl_float_t *)e->data.data);
+        return KDL_ERR_OK;
     } else {
-        return KDL_ERR_NTF;
+        return KDL_ERR_TYP;
     }
 }
 
 
 
-int kdl_machine_addWatcher(kdl_machine_t *m, const char *target, kdl_watcher_t callback) {
+void kdl_machine_addWatcher(kdl_machine_t *m, const char *target, kdl_watcher_t callback) {
     kdl_entry_t *e;
-    if (getVarRef(m, target, &e)) {
-        e->watcher = callback;
-        return KDL_ERR_OK;
-    } else {
-        return KDL_ERR_NTF;
-    }
+    getVarRef(m, target, &e);
+    e->watcher = callback;
 }
 
 
@@ -577,6 +552,18 @@ void kdl_machine_addVerb(kdl_machine_t *m, const char *target, kdl_verb_t v) {
     setVerb(m, target, v);
 }
 
+void kdl_machine_addDefVerb(kdl_machine_t *m, kdl_verb_t v) {
+    m->defVerb = v;
+}
+
+#define UNUSED(x) (void)(x)
+void defDefVerb(kdl_machine_t *m, const char *context, const char *name, kdl_data_t *params, size_t length) {
+    UNUSED(m);
+    UNUSED(context);
+    UNUSED(params);
+    UNUSED(length);
+    printf("ERROR: verb not found: %s\n", name);
+}
 
 void kdl_mkMachine(kdl_machine_t *out) {
     kdl_machine_t m;
@@ -585,6 +572,9 @@ void kdl_mkMachine(kdl_machine_t *out) {
     m.s.malloc = defMalloc;
     m.s.realloc = defRealloc;
     m.s.free = defFree;
+
+    m.defVerb.validate = false;
+    m.defVerb.func = defDefVerb;
 
     memset(&m.start, 0, sizeof(kdl_program_t));
     memset(m.pbuf, 0, sizeof(m.pbuf));

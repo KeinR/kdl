@@ -1,8 +1,8 @@
-(1 + 0 ? print [Hewlow world] 43 (21 / 2 - 5 + 1) ::
-    (? print [Another result] (5 * 4 / 2))
-    (? print [More hwllo])
-    (? print [uwu desu] ::
-        (? print momomo)
-        (foobar: ? print {momomo}))
-    (do + 50 - 50 + 50 ? print [this should not be visible]))
+
+
+(!{push fib} ? fib 0 1 0 21)
+({push fib} , {push fib _2} < 20 ? fib {push fib _1} ({push fib _0} + {push fib _1}) ({push fib _2} + 1))
+({push fib} , {push fib _2} = 20 ? result {push fib _1})
+
+
 

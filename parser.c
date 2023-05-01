@@ -486,7 +486,7 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, size_t *skip, bool *eo
             }
         } else if (isCharOrUns(input[i+l])) {
             t = KDL_TK_WORD;
-            for (; isCharOrUns(input[i+l]); l++);
+            for (; isCharOrUns(input[i+l]) || isNumber(input[i+l]); l++);
         } else {
             printf("\n%i\n", (int) c);
             NTERROR(KDL_ERR_UNX, "Unrecognized character", input)
@@ -574,7 +574,7 @@ void infixToPostfix(kdl_state_t s, element_t *input, size_t inputLen, int maxPre
             l.data = e.data;
             levels[levelsLen++] = l;
 
-            assert(levelsLen <= (inputLen - 1) / 2);
+            assert(levelsLen <= inputLen);
         } else {
             // Value
             stack[stackLen++] = input[i].data;

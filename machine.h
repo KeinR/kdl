@@ -56,6 +56,8 @@ typedef struct _kdl_machine_t {
     kdl_state_t s;
     kdl_hashmap_t vars;
     kdl_hashmap_t verbs;
+
+    kdl_verb_t defVerb;
 } kdl_machine_t;
 
 void kdl_machine_setInt(kdl_machine_t *m, const char *name, kdl_int_t value);
@@ -68,8 +70,9 @@ int kdl_machine_getString(kdl_machine_t *m, const char *name, const char **value
 int kdl_machine_getFloat(kdl_machine_t *m, const char *name, kdl_float_t *value);
 
 // If it doesn't exist, will create an integer of value zero
-int kdl_machine_addWatcher(kdl_machine_t *m, const char *target, kdl_watcher_t callback);
+void kdl_machine_addWatcher(kdl_machine_t *m, const char *target, kdl_watcher_t callback);
 void kdl_machine_addVerb(kdl_machine_t *m, const char *target, kdl_verb_t v);
+void kdl_machine_addDefVerb(kdl_machine_t *m, kdl_verb_t v);
 
 void kdl_mkMachine(kdl_machine_t *out);
 kdl_error_t kdl_machine_load(kdl_machine_t *machine, const char *program);
