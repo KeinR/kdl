@@ -237,6 +237,7 @@ kdl_entry_t *mkBlankVar(kdl_machine_t *m, const char *fullName) {
 }
 
 void getVarRef(kdl_machine_t *m, const char *fullName, kdl_entry_t **out) {
+    printf("GET VAR '%s'\n", fullName);
     kdl_hashmap_result_t r;
     kdl_hashmap_search(&m->vars, fullName, &r);
     if (r.code != KDL_HASHMAP_EOK) {
@@ -249,6 +250,7 @@ void getVarRef(kdl_machine_t *m, const char *fullName, kdl_entry_t **out) {
 }
 
 void setVar(kdl_machine_t *m, const char *fullName, int type, void *data) {
+    printf("SET VAR '%s'\n", fullName);
     kdl_entry_t *ptr;
     getVarRef(m, fullName, &ptr);
     freeData(m->s, &ptr->data);

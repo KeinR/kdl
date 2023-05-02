@@ -329,7 +329,9 @@ kdl_error_t addToContext(kdl_token_t currentToken, contextTracker_t *tracker, co
     if (tracker->contextLen + wordLen + 1 > CONTEXT_BUFFER_SIZE) {
         ERROR(KDL_ERR_BUF, "Context string buffer size exceeded", currentToken)
     }
-    tracker->context[tracker->contextLen++] = ' ';
+    if (tracker->contextLen > 0) {
+        tracker->context[tracker->contextLen++] = ' ';
+    }
     memcpy(tracker->context + tracker->contextLen, word, wordLen);
     tracker->indices[tracker->indicesLen++] = tracker->contextLen;
     tracker->contextLen += wordLen;
@@ -954,10 +956,21 @@ kdl_error_t getRule(kdl_state_t s, contextTracker_t context, kdl_tokenization_t 
     kdl_rule_t result;
     memset(&result, 0, sizeof(kdl_rule_t));
     result.active = false; // Formality
+    bool gotNewContext = false;
 
     if (!tokenEqChar(t->tokens[*i], '(', KDL_TK_CTRL)) {
         ERROR(KDL_ERR_EXP, "Expected '(' at start of rule", t->tokens[*i])
     }
+    (*i)++;
+
+    contextTracker_t nc;
+    size_t ti = *i;
+    TEST(getMark(s, context, context.depth, t, &ti, &nc, &gotNewContext))
+    if (gotNewContext) {
+        *i = ti;
+        context = nc;
+    }
+
 
     TEST(getCompute(s, context, t, i, &result.compute, '?'))
     TEST(getExecute(s, context, t, i, &result.execute))
@@ -973,6 +986,10 @@ kdl_error_t getRule(kdl_state_t s, contextTracker_t context, kdl_tokenization_t 
     freeRule(s, &result);
 
     ERROR_NONE
+
+    if (gotNewContext) {
+        freeContext(s, &context);
+    }
 
     ERROR_END
 }

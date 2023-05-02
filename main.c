@@ -39,17 +39,16 @@ void cb_default(kdl_machine_t *m, const char *context, const char *name, kdl_dat
     UNUSED(name);
     UNUSED(length);
     char buffer[STR_BUF_SIZE];
-    snprintf(buffer, STR_BUF_SIZE, "push %s", name);
+    snprintf(buffer, STR_BUF_SIZE, "push %s call", name);
+    printf("Setting '%s'\n", buffer);
     kdl_machine_setInt(m, buffer, 1);
-    printf("Set '%s' to true\n", buffer);
     for (size_t i = 0; i < length && i < 128; i++) {
         snprintf(buffer, STR_BUF_SIZE, "push %s _%lu", name, i);
         kdl_data_t p = params[i];
-        printf("Set '%s' to... ", buffer);
         switch (p.datatype) {
         case KDL_DT_INT:
-            printf("Value:%lu: %llu\n", i, *((kdl_int_t *)p.data));
             kdl_machine_setInt(m, buffer, *((kdl_int_t *)p.data));
+            printf("Set %lu to %llu\n", i, *((kdl_int_t *)p.data));
             break;
         case KDL_DT_STR:
             kdl_machine_setString(m, buffer, (char *) p.data);
