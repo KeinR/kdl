@@ -102,7 +102,7 @@ kdl_int_t notFloat(kdl_float_t a) {
 }
 
 kdl_int_t notInt(kdl_int_t a) {
-    return !((int)a);
+    return !a;
 }
 
 kdl_int_t notint(kdl_int_t a) {
@@ -237,7 +237,6 @@ kdl_entry_t *mkBlankVar(kdl_machine_t *m, const char *fullName) {
 }
 
 void getVarRef(kdl_machine_t *m, const char *fullName, kdl_entry_t **out) {
-    printf("GET VAR '%s'\n", fullName);
     kdl_hashmap_result_t r;
     kdl_hashmap_search(&m->vars, fullName, &r);
     if (r.code != KDL_HASHMAP_EOK) {
@@ -250,7 +249,6 @@ void getVarRef(kdl_machine_t *m, const char *fullName, kdl_entry_t **out) {
 }
 
 void setVar(kdl_machine_t *m, const char *fullName, int type, void *data) {
-    printf("SET VAR '%s'\n", fullName);
     kdl_entry_t *ptr;
     getVarRef(m, fullName, &ptr);
     freeData(m->s, &ptr->data);
@@ -464,32 +462,34 @@ void doCompute(kdl_machine_t *m, kdl_compute_t *c, kdl_data_t *result) {
 }
 
 void doExecute(kdl_machine_t *m, kdl_execute_t *c) {
-    kdl_verb_t *verb;
-    if (!getVerb(m, c->order.verb, &verb)) {
-        assert(m->defVerb.func != NULL); // Error: verb not found, and no fallback specified
-        verb = &m->defVerb;
-    }
-    if (verb->validate && c->order.nParams != verb->datatypesLen) {
-        assert(false); // Error: invalid number of parameters
-    }
-    kdl_data_t *params = (kdl_data_t *) m->s.malloc(sizeof(kdl_data_t) * c->order.nParams);
-    size_t paramsLen = 0;
-    for (size_t i = 0; i < c->order.nParams; i++) {
-        kdl_data_t result;
-        doCompute(m, &c->order.params[i], &result);
-        if (verb->validate && result.datatype != verb->datatypes[i]) {
-            // TODO: handle correctly
-            assert(false); // Error: datatype mismatch
+    if (c->order.verb != NULL) {
+        kdl_verb_t *verb;
+        if (!getVerb(m, c->order.verb, &verb)) {
+            assert(m->defVerb.func != NULL); // Error: verb not found, and no fallback specified
+            verb = &m->defVerb;
         }
-        params[paramsLen++] = result;
-    }
+        if (verb->validate && c->order.nParams != verb->datatypesLen) {
+            assert(false); // Error: invalid number of parameters
+        }
+        kdl_data_t *params = (kdl_data_t *) m->s.malloc(sizeof(kdl_data_t) * c->order.nParams);
+        size_t paramsLen = 0;
+        for (size_t i = 0; i < c->order.nParams; i++) {
+            kdl_data_t result;
+            doCompute(m, &c->order.params[i], &result);
+            if (verb->validate && result.datatype != verb->datatypes[i]) {
+                // TODO: handle correctly
+                assert(false); // Error: datatype mismatch
+            }
+            params[paramsLen++] = result;
+        }
 
-    verb->func(m, c->order.context, c->order.verb, params, paramsLen);
+        verb->func(m, c->order.context, c->order.verb, params, paramsLen);
 
-    for (size_t i = 0; i < paramsLen; i++) {
-        freeData(m->s, &params[i]);
+        for (size_t i = 0; i < paramsLen; i++) {
+            freeData(m->s, &params[i]);
+        }
+        m->s.free(params);
     }
-    m->s.free(params);
 
     // Now add child elements to program
 

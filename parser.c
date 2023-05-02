@@ -478,11 +478,12 @@ kdl_error_t getToken(const char *input, kdl_token_t *out, size_t *skip, bool *eo
         if (isNumber(c)) {
             t = KDL_TK_INT;
             for (; isNumber(input[i+l]); l++);
-            if (input[i] == '.') {
+            if (input[i+l] == '.') {
                 t = KDL_TK_FLOAT;
+                l++;
                 for (; isNumber(input[i+l]); l++);
             }
-            if (input[i] == '%') {
+            if (input[i+l] == '%') {
                 t = KDL_TK_PERC;
                 l++;
             }
